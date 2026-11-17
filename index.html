@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>폼 체크</title>
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <button id="backBtn" class="icon-btn" aria-label="뒤로" hidden>←</button>
+  <h1 id="title">폼 체크</h1>
+  <button id="settingsBtn" class="icon-btn" aria-label="설정">⚙︎</button>
+</header>
+
+<main>
+  <!-- 온보딩 -->
+  <section id="view-onboarding" class="view" hidden>
+    <div class="card">
+      <h2>🔒 영상은 기기 밖으로 나가지 않아요</h2>
+      <p>자세 분석은 이 기기의 브라우저 안에서만 처리돼요. 서버로 영상이나 관절 데이터를 보내지 않아요. 기록과 영상 저장은 직접 선택할 때만 이 기기에 저장돼요.</p>
+    </div>
+    <div class="card">
+      <h2>📐 이렇게 촬영해 주세요</h2>
+      <div class="guide-figure" aria-hidden="true">
+        <svg viewBox="0 0 320 120">
+          <rect x="20" y="58" width="34" height="22" rx="4" class="g-cam"/>
+          <circle cx="37" cy="69" r="6" class="g-lens"/>
+          <line x1="58" y1="69" x2="228" y2="69" class="g-dash"/>
+          <text x="140" y="60" text-anchor="middle" class="g-text">2~3m</text>
+          <circle cx="262" cy="22" r="9" class="g-body"/>
+          <line x1="262" y1="31" x2="262" y2="70" class="g-limb"/>
+          <line x1="262" y1="70" x2="272" y2="110" class="g-limb"/>
+          <line x1="262" y1="44" x2="282" y2="56" class="g-limb"/>
+          <text x="262" y="118" text-anchor="middle" class="g-text small">측면</text>
+        </svg>
+      </div>
+      <ul class="checks">
+        <li><b>측면</b>에서, 카메라는 허리 높이</li>
+        <li>거리 <b>2~3m</b>, 머리부터 발끝까지 <b>전신</b>이 보이게</li>
+        <li>관절이 보이는 <b>몸에 맞는 옷</b>, 밝은 곳</li>
+        <li>폰은 고정(삼각대나 벽에 기대기)</li>
+      </ul>
+    </div>
+    <p class="disclaimer">이 앱은 의료 기기가 아니며 부상을 진단하거나 치료하지 않아요. 결과는 참고용 폼 피드백이에요.</p>
+    <button id="onboardDone" class="btn primary block">시작하기</button>
+  </section>
+
+  <!-- 홈 -->
+  <section id="view-home" class="view" hidden>
+    <h2 class="hero">스쿼트 자세 분석</h2>
+    <div id="viewMode" class="seg big" role="radiogroup" aria-label="촬영 방향">
+      <button data-mode="side">측면</button><button data-mode="front">정면</button><button data-mode="both">둘 다</button>
+    </div>
+    <p class="hint center" id="viewHint"></p>
+    <div class="actions">
+      <button id="recordBtn" class="btn primary">● 촬영</button>
+      <label class="btn">영상 불러오기<input type="file" accept="video/*" id="fileInput" hidden></label>
+    </div>
+    <button id="demoBtn" class="link block-center">예시 보기</button>
+    <div id="recentBlock" hidden>
+      <div class="row-head"><h2>최근 기록</h2><button id="historyBtn" class="link">전체</button></div>
+      <div id="recentList" class="session-list"></div>
+    </div>
+  </section>
+
+  <!-- 촬영 -->
+  <section id="view-capture" class="view" hidden>
+    <div class="stage cam" id="camStage">
+      <video id="camVideo" playsinline muted autoplay></video>
+      <canvas id="camCanvas"></canvas>
+      <div id="countdown" class="countdown" hidden></div>
+      <div id="recBadge" class="rec-badge" hidden>● REC <span id="recTime">0:00</span></div>
+    </div>
+    <div id="camStatus" class="status">카메라 준비 중…</div>
+    <div class="actions">
+      <button id="flipBtn" class="btn">카메라 전환</button>
+      <button id="recBtn" class="btn primary" disabled>녹화 시작</button>
+    </div>
+    <p class="hint center" id="captureHint">측면 · 2~3m · 전신</p>
+  </section>
+
+  <!-- 둘 다: 두 번째 영상 -->
+  <section id="view-step" class="view" hidden>
+    <div class="card step-card">
+      <p class="step-badge">2 / 2</p>
+      <h2>정면 영상</h2>
+      <p class="sub">같은 세트를 정면에서 찍은 영상</p>
+      <div class="actions">
+        <button id="stepRecordBtn" class="btn primary">● 정면 촬영</button>
+        <label class="btn">정면 영상 불러오기<input type="file" accept="video/*" id="stepFileInput" hidden></label>
+      </div>
+      <button id="stepSkipBtn" class="btn ghost block">정면 없이 측면 결과만 보기</button>
+    </div>
+  </section>
+
+  <!-- 분석 중 -->
+  <section id="view-processing" class="view" hidden>
+    <div class="processing">
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="procText">준비 중…</p>
+      <div class="progress"><div id="procBar"></div></div>
+      <p class="hint">영상은 이 기기 안에서만 처리돼요.</p>
+      <button id="procCancel" class="btn">취소</button>
+    </div>
+  </section>
+
+  <!-- 결과 -->
+  <section id="view-result" class="view" hidden>
+    <div id="viewTabs" class="tabs" role="tablist" aria-label="분석 방향" hidden>
+      <button role="tab" data-tab="side">측면 분석</button><button role="tab" data-tab="front">정면 분석</button>
+    </div>
+    <div id="resultBanner"></div>
+    <div class="player">
+      <div class="stage" id="resultStage">
+        <video id="resultVideo" playsinline muted></video>
+        <canvas id="resultCanvas"></canvas>
+      </div>
+      <div class="player-controls">
+        <button id="playBtn" class="icon-btn" aria-label="재생">▶</button>
+        <input type="range" id="seek" min="0" max="1000" value="0" aria-label="재생 위치">
+        <select id="rate" aria-label="재생 속도"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option></select>
+      </div>
+      <div class="toggles">
+        <label><input type="checkbox" id="showSkel" checked> <span class="sw sw-user"></span>내 자세</label>
+        <label class="side-only"><input type="checkbox" id="showGhost"> <span class="sw sw-ghost"></span>기준 동작</label>
+        <select id="ghostMode" class="side-only" aria-label="기준 동작 표시 방식"><option value="sync">내 속도에 맞춤</option><option value="tempo">기준 리듬으로</option></select>
+        <label class="side-only"><input type="checkbox" id="showFeet" checked> <span class="sw sw-feet"></span>발바닥 접지</label>
+        <label class="side-only"><input type="checkbox" id="showBack" checked> <span class="sw sw-back"></span>등 라인 <small class="muted">(실험)</small></label>
+        <label class="side-only"><input type="checkbox" id="showMuscle" checked> <span class="sw sw-muscle"></span>사용 근육 <small class="muted">(추정)</small></label>
+        <label class="front-only"><input type="checkbox" id="showFrontGuide" checked> <span class="sw sw-user"></span>무릎·골반·중심선</label>
+        <label class="front-only"><input type="checkbox" id="showFrontBase" checked> <span class="sw sw-feet"></span>바닥 지탱</label>
+        <label class="front-only"><input type="checkbox" id="showFrontMuscle"> <span class="sw sw-muscle"></span>사용 근육 <small class="muted">(추정)</small></label>
+      </div>
+    </div>
+
+    <section class="coach">
+      <div class="coach-head"><h2 id="coachTitle">이렇게 해 보세요</h2><div id="refChips" class="seg" role="tablist" aria-label="비교 대상"></div></div>
+      <ol id="actionList" class="action-list"></ol>
+      <div id="goodChips" class="good-chips"></div>
+    </section>
+
+    <div class="actions">
+      <button id="saveBtn" class="btn primary">기록 저장</button>
+      <button id="againBtn" class="btn">새로 분석</button>
+    </div>
+
+    <details class="more" id="moreDetails">
+      <summary>자세히 보기</summary>
+
+      <div id="repChips" class="chips" role="tablist" aria-label="반복 선택"></div>
+      <div id="metricCards" class="cards"></div>
+
+      <div class="side-only">
+        <h2 id="vsTitle">나 vs 기준</h2>
+        <div id="vsTable"></div>
+      </div>
+
+      <h2>피드백 상세</h2>
+      <ul id="feedbackList" class="feedback"></ul>
+
+      <div class="side-only">
+        <h2>각도 곡선 비교</h2>
+        <p class="sub" id="compareSub"></p>
+        <canvas id="compareChart" class="chart"></canvas>
+        <ul id="diffList" class="diffs"></ul>
+      </div>
+
+      <h2><span class="side-only">각도 변화</span><span class="front-only">높이·무릎 간격 변화</span></h2>
+      <canvas id="timelineChart" class="chart"></canvas>
+
+      <div class="front-only">
+        <h2>좌우 근육 사용 <span class="tag">추정</span></h2>
+        <p class="sub" id="frontMuscleSub"></p>
+        <ul id="frontMuscleView" class="muscle-lr"></ul>
+      </div>
+      <div class="side-only">
+        <h2>근육 부하 <span class="tag">추정</span></h2>
+        <div id="muscleView" class="muscle"></div>
+      </div>
+
+      <button id="csvBtn" class="btn block">CSV 내보내기</button>
+    </details>
+    <p class="disclaimer">참고용이에요. 의료 진단이 아니에요.</p>
+  </section>
+
+  <!-- 기록 -->
+  <section id="view-history" class="view" hidden>
+    <div id="histTabs" class="chips"></div>
+    <h2>추이</h2>
+    <canvas id="trendChart" class="chart"></canvas>
+    <h2>세트 목록</h2>
+    <div id="historyList" class="session-list"></div>
+  </section>
+
+  <!-- 설정 -->
+  <section id="view-settings" class="view" hidden>
+    <div class="card">
+      <label class="setting"><span><b>영상도 함께 저장</b><br><small>끄면 관절 데이터와 분석 결과만 저장해요.</small></span><input type="checkbox" id="setSaveVideo"></label>
+    </div>
+    <div class="card">
+      <p><b>데이터</b><br><small>모든 데이터는 이 기기의 브라우저 저장소에만 있어요.</small></p>
+      <p id="storageInfo" class="sub"></p>
+      <button id="deleteAll" class="btn danger">모든 기록 삭제</button>
+    </div>
+    <div class="card">
+      <button id="replayOnboarding" class="btn">촬영 가이드 다시 보기</button>
+    </div>
+    <p class="disclaimer">폼 체크 MVP 웹 프로토타입 · 자세 추정: MediaPipe Pose (기기 내 처리)</p>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
