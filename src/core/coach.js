@@ -28,6 +28,10 @@ const DO = {
   'foot-lift': '양발 전체로 바닥을 누른 채 움직이세요',
 };
 
+// 종목별로 문장이 달라야 하는 경우
+const DO_EX = { deadlift: { 'hips-first': '바닥에서 당길 때 가슴과 엉덩이를 같이 올리세요' } };
+const doText = (exId, id) => DO_EX[exId]?.[id] || DO[id];
+
 // 잘한 점 → 짧은 칩
 const GOOD = {
   'good-depth': '깊이 충분',
@@ -54,7 +58,7 @@ export function buildCoaching(result, { max = 3 } = {}) {
   for (const f of result.feedback) {
     if (f.level === 'good') { if (GOOD[f.id]) good.push(GOOD[f.id]); else if (f.id === 'stance') good.push(f.title.split(' (')[0]); continue; }
     if (f.level !== 'warn' || !DO[f.id]) continue;
-    actions.push({ text: DO[f.id], tag: repsText(f), kind: 'form', reps: f.reps, prio: 0 });
+    actions.push({ text: doText(result.exercise, f.id), tag: repsText(f), kind: 'form', reps: f.reps, prio: 0 });
     used.add(f.id);
   }
 
@@ -78,7 +82,7 @@ export function buildCoaching(result, { max = 3 } = {}) {
   // 3) 자세 경고가 없으면 정보성 피드백 중 행동 가능한 것
   if (!actions.length) {
     for (const f of result.feedback) {
-      if (f.level === 'info' && DO[f.id]) actions.push({ text: DO[f.id], tag: repsText(f), kind: 'form', reps: f.reps, prio: 4 });
+      if (f.level === 'info' && DO[f.id]) actions.push({ text: doText(result.exercise, f.id), tag: repsText(f), kind: 'form', reps: f.reps, prio: 4 });
     }
   }
 

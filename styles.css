@@ -292,3 +292,8 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 #fusedChips button.bad { color: var(--warn); }
 .vs.compact th, .vs.compact td { padding: 6px 10px; }
 #fusedBlock { margin: 16px 0; }
+.ex-seg { display: flex; width: max-content; margin: 4px auto 0; }
+.ex-seg small { font-size: 10px; color: var(--warn); }
+.seg button:disabled { opacity: .35; cursor: not-allowed; }
+.share-row { display: grid; gap: 6px; margin: 10px 0 4px; }
+.share-opt { font-size: 13px; color: var(--muted); text-align: center; }

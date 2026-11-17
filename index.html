@@ -51,7 +51,10 @@
 
   <!-- 홈 -->
   <section id="view-home" class="view" hidden>
-    <h2 class="hero">스쿼트 자세 분석</h2>
+    <div id="exSeg" class="seg ex-seg" role="radiogroup" aria-label="운동">
+      <button data-ex="squat">스쿼트</button><button data-ex="deadlift">데드리프트 <small>베타</small></button>
+    </div>
+    <h2 class="hero" id="heroTitle">스쿼트 자세 분석</h2>
     <div id="viewMode" class="seg big" role="radiogroup" aria-label="촬영 방향">
       <button data-mode="side">측면</button><button data-mode="front">정면</button><button data-mode="both">둘 다</button>
     </div>
@@ -155,6 +158,10 @@
     <div class="actions">
       <button id="saveBtn" class="btn primary">기록 저장</button>
       <button id="againBtn" class="btn">새로 분석</button>
+    </div>
+    <div class="share-row">
+      <button id="shareBtn" class="btn block">이미지로 공유</button>
+      <label class="share-opt"><input type="checkbox" id="shareFrame"> 실제 영상 포함 <small>(지금 멈춘 장면)</small></label>
     </div>
 
     <details class="more" id="moreDetails">

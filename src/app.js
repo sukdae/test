@@ -2,6 +2,7 @@
 import { EXERCISES } from './core/exercises.js';
 import { fuse3D } from './core/fuse3d.js';
 import { showFused, hideFused } from './ui/fused.js';
+import { shareResult } from './ui/share.js';
 import { analyzeSession } from './core/analyze.js';
 import { analyzeFront } from './core/front.js';
 import { detectView, viewScore } from './core/landmarks.js';
@@ -18,8 +19,10 @@ const $ = (id) => document.getElementById(id);
 const TITLES = { onboarding: '시작하기', home: '폼 체크', capture: '촬영', step: '정면 영상', processing: '분석 중', result: '분석 결과', history: '기록', settings: '설정' };
 const VIEW_KO = { side: '측면', front: '정면' };
 const MODE_HINT = { side: '깊이 · 상체 · 뒤꿈치 · 리듬', front: '무릎 · 좌우 균형 · 체중 분배', both: '영상 2개를 한 번에 골라도 돼요 · 3D' };
-// 지금은 스쿼트만 화면에 노출(데드리프트는 코드만 유지)
-const VISIBLE_EXERCISES = ['squat'];
+// 데드리프트는 베타: 측면만, 기준값은 논문 근거 없는 초깃값 → 트레이너 피드백용
+const VISIBLE_EXERCISES = ['squat', 'deadlift'];
+const SIDE_ONLY = ['deadlift'];
+const BETA = { deadlift: '데드리프트는 베타예요. 기준값이 논문 근거 없이 정한 초깃값이라 참고만 해 주세요.' };
 
 const settings0 = store.getSettings();
 const state = {
@@ -63,8 +66,13 @@ function back() { show(state.stack.pop() || 'home', { push: false }); }
 
 // ---------- 홈 ----------
 function renderHome() {
+  const sideOnly = SIDE_ONLY.includes(state.exercise);
+  if (sideOnly) state.mode = 'side';
+  $('exSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.ex === state.exercise)));
+  $('heroTitle').textContent = `${EXERCISES[state.exercise].name} 자세 분석`;
+  $('viewMode').querySelectorAll('button').forEach((b) => { b.disabled = sideOnly && b.dataset.mode !== 'side'; });
   $('viewMode').querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === state.mode)));
-  $('viewHint').textContent = MODE_HINT[state.mode];
+  $('viewHint').textContent = sideOnly ? '측면만 · 베타' : MODE_HINT[state.mode];
   store.listSessions().then((list) => {
     $('recentBlock').hidden = !list.length;
     $('recentList').innerHTML = list.slice(0, 3).map(sessionItem).join('');
@@ -73,6 +81,26 @@ function renderHome() {
 
 function goHome() { show('home'); renderHome(); }
 
+
+$('exSeg').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-ex]');
+  if (!b) return;
+  state.exercise = b.dataset.ex;
+  store.setSetting('exercise', state.exercise);
+  renderHome();
+});
+
+$('shareBtn').addEventListener('click', async () => {
+  const btn = $('shareBtn');
+  btn.disabled = true;
+  try {
+    const view = $('view-result').dataset.view === 'front' ? '정면' : '측면';
+    const both = !$('viewTabs').hidden;
+    const r = await shareResult({ title: `${EXERCISES[state.shownEx || state.exercise].name} · ${both ? '측면+정면' : view}`, includeFrame: $('shareFrame').checked });
+    if (r === 'downloaded') toast('이미지를 저장했어요');
+  } catch (err) { console.error(err); toast('이미지를 만들지 못했어요'); }
+  finally { btn.disabled = false; }
+});
 
 $('viewMode').addEventListener('click', (e) => {
   const b = e.target.closest('[data-mode]');
@@ -229,16 +257,19 @@ async function handleVideo(blob) {
 function showSingle(view, result, { videoUrl = null, blob = null, demo = false, saved = false } = {}) {
   $('viewTabs').hidden = true;
   hideFused();
+  state.shownEx = result.exercise;
   const opts = {
     videoUrl, demo, saved, onAgain: goHome,
     onSave: () => persist(view === 'side' ? { side: result, sideBlob: blob } : { front: result, frontBlob: blob }),
   };
   if (view === 'front') { disposeResult(); showFrontResult(result, opts); } else showResult(result, opts);
+  if (BETA[result.exercise]) $('resultBanner').insertAdjacentHTML('afterbegin', `<div class="banner info">${BETA[result.exercise]}</div>`);
 }
 
 function showCombined(pair, { demo = false, saved = false } = {}) {
   const coach = mergeCoaching(pair.side, pair.front);
   const fz = fuse3D(pair.side, pair.front);
+  state.shownEx = pair.side.exercise;
   const tabs = $('viewTabs');
   tabs.hidden = false;
   const render = (view, rep = 0) => {
