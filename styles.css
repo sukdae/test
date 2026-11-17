@@ -282,3 +282,13 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 .block-center { display: block; margin: 4px auto 8px; }
 #viewHint { margin: 8px 0 0; }
 [hidden] { display: none !important; }
+
+.fused-canvas { display: block; width: 100%; height: 280px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; touch-action: pan-y; cursor: grab; }
+.warn-text { color: var(--warn); }
+.fused-summary { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
+.fused-summary .bad { color: var(--warn); }
+.fused-summary .ok { color: var(--good); }
+.fused-summary b { margin-left: 4px; }
+#fusedChips button.bad { color: var(--warn); }
+.vs.compact th, .vs.compact td { padding: 6px 10px; }
+#fusedBlock { margin: 16px 0; }

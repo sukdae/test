@@ -37,8 +37,11 @@ const SERIES = ['height', 'kneeRatio', 'inL', 'inR', 'tilt', 'shift', 'lean', 'a
 const P = (lm, i, W, H) => { const p = lm?.[i]; return p && visOf(p) >= 0.5 ? { x: p.x * W, y: p.y * H } : null; };
 
 // 무릎이 엉덩이–발목 직선에서 몸 중심선 쪽(안쪽)으로 들어간 거리 (양수 = 안쪽)
-function inward(hip, knee, ankle, midX) {
+// 허벅지가 화면에서 거의 수평이 되면(깊은 스쿼트, 무릎이 엉덩이 높이 근처나 위) 직선 위 위치를 잴 수 없어
+// NaN을 돌려준다. 이 구간은 앞뒤 프레임 값으로 채운다. (실제 영상: 평행보다 깊은 스쿼트에서 무릎 모임 오탐)
+export function inward(hip, knee, ankle, midX) {
   const t = (knee.y - hip.y) / ((ankle.y - hip.y) || 1);
+  if (!(t >= 0.25 && t <= 1.05)) return NaN;
   const lineX = hip.x + (ankle.x - hip.x) * t;
   const toward = Math.sign(midX - lineX) || 1;
   return (knee.x - lineX) * toward;
@@ -240,4 +243,21 @@ export function frontFeedback(reps, stance) {
   if (!liftL.length && !liftR.length && !shift.length) add('good-base', 'good', '양발로 바닥을 고르게 지탱해요', '', []);
   const order = { warn: 0, info: 1, good: 2 };
   return items.sort((a, b) => order[a.level] - order[b.level]);
+}
+
+// '나 vs 기준' (정면): 논문 기반 정면 기준 자세와 비교. ok = 기준 범위 안
+export function compareFrontIdeal(fr, ideal) {
+  const T = FRONT_THRESHOLDS, m = fr.summary || {};
+  const rows = [];
+  const add = (key, label, me, refText, ok, basis) => rows.push({ key, label, me, refText, ok: isNum(me) || key === 'stance' ? ok : null, basis });
+  const st = fr.stance?.ratio;
+  add('stance', '스탠스 너비', st, `${Math.round(ideal.stance.min * 100)}–${Math.round(ideal.stance.max * 100)}%`,
+    isNum(st) ? st >= ideal.stance.min && st <= ideal.stance.max : null, ideal.basis.stance);
+  const kin = Math.max(m.kneeInL ?? NaN, m.kneeInR ?? NaN);
+  add('knee', '무릎 정렬', kin, '0%', kin <= T.kneeInward, ideal.basis.knee);
+  add('tilt', '골반 기울기', isNum(m.tilt) ? Math.abs(m.tilt) : NaN, '0°', Math.abs(m.tilt) <= T.pelvicTilt, ideal.basis.symmetry);
+  add('shift', '엉덩이 쏠림', isNum(m.shift) ? Math.abs(m.shift) : NaN, '0%', Math.abs(m.shift) <= T.hipShift, ideal.basis.symmetry);
+  add('lean', '상체 옆 기울기', isNum(m.sideLean) ? Math.abs(m.sideLean) : NaN, '0°', Math.abs(m.sideLean) <= T.sideLean, ideal.basis.symmetry);
+  add('weight', '체중 왼:오', m.leftPct, '50 : 50', Math.abs(m.leftPct - 50) <= T.hipShift * 100, ideal.basis.symmetry);
+  return rows;
 }

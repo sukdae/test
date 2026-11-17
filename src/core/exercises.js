@@ -47,6 +47,24 @@ const IDEAL_SQUAT = {
   metrics: { thighAboveParallel: 0, minKnee: 60, minHip: 60, maxTrunk: 30, topHip: 174 },
 };
 
+// 정면 기준 자세. 수치 근거는 [논문 3] Straub & Powers 2024 본문 'Stance Width'·'Clinical Applications' 절.
+export const IDEAL_SQUAT_FRONT = {
+  id: 'ideal-front',
+  name: '논문 기반 기준 자세 (정면)',
+  short: '기준',
+  // 중간 스탠스 = 어깨너비의 100–150%. 150%를 넘는 넓은 스탠스는 무릎 외반(안쪽으로 모이는) 모멘트가 커질 수 있음 [논문 3]
+  stance: { min: 1.0, max: 1.5 },
+  // 무릎은 엉덩이–발목 선 위, 안쪽으로 모이지 않게. 무릎 외반 모멘트를 피하라는 권고 [논문 3]
+  kneeIn: 0,
+  // 좌우 대칭(골반 수평·쏠림 0·상체 수직·체중 50:50) [초깃값] — 확인한 논문에 수치 없음
+  tilt: 0, shift: 0, sideLean: 0, leftPct: 50,
+  basis: {
+    stance: 'Straub & Powers 2024 (중간 스탠스 100–150%)',
+    knee: 'Straub & Powers 2024 (무릎 외반 피하기)',
+    symmetry: '좌우 대칭 (초깃값, 논문 수치 없음)',
+  },
+};
+
 export const REFERENCES = {
   squat: [IDEAL_SQUAT],
   deadlift: [{ id: 'template', name: '일반 템플릿 (근거 논문 없음)', short: '기준' }],

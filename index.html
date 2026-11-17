@@ -58,7 +58,7 @@
     <p class="hint center" id="viewHint"></p>
     <div class="actions">
       <button id="recordBtn" class="btn primary">● 촬영</button>
-      <label class="btn">영상 불러오기<input type="file" accept="video/*" id="fileInput" hidden></label>
+      <label class="btn">영상 불러오기<input type="file" accept="video/*" id="fileInput" multiple hidden></label>
     </div>
     <button id="demoBtn" class="link block-center">예시 보기</button>
     <div id="recentBlock" hidden>
@@ -87,11 +87,11 @@
   <section id="view-step" class="view" hidden>
     <div class="card step-card">
       <p class="step-badge">2 / 2</p>
-      <h2>정면 영상</h2>
-      <p class="sub">같은 세트를 정면에서 찍은 영상</p>
+      <h2 id="stepTitle">정면 영상</h2>
+      <p class="sub">같은 세트를 다른 방향에서 찍은 영상</p>
       <div class="actions">
         <button id="stepRecordBtn" class="btn primary">● 정면 촬영</button>
-        <label class="btn">정면 영상 불러오기<input type="file" accept="video/*" id="stepFileInput" hidden></label>
+        <label class="btn" id="stepFileLabel">정면 영상 불러오기<input type="file" accept="video/*" id="stepFileInput" hidden></label>
       </div>
       <button id="stepSkipBtn" class="btn ghost block">정면 없이 측면 결과만 보기</button>
     </div>
@@ -128,12 +128,13 @@
         <label><input type="checkbox" id="showSkel" checked> <span class="sw sw-user"></span>내 자세</label>
         <label class="side-only"><input type="checkbox" id="showGhost"> <span class="sw sw-ghost"></span>기준 동작</label>
         <select id="ghostMode" class="side-only" aria-label="기준 동작 표시 방식"><option value="sync">내 속도에 맞춤</option><option value="tempo">기준 리듬으로</option></select>
-        <label class="side-only"><input type="checkbox" id="showFeet" checked> <span class="sw sw-feet"></span>발바닥 접지</label>
-        <label class="side-only"><input type="checkbox" id="showBack" checked> <span class="sw sw-back"></span>등 라인 <small class="muted">(실험)</small></label>
-        <label class="side-only"><input type="checkbox" id="showMuscle" checked> <span class="sw sw-muscle"></span>사용 근육 <small class="muted">(추정)</small></label>
-        <label class="front-only"><input type="checkbox" id="showFrontGuide" checked> <span class="sw sw-user"></span>무릎·골반·중심선</label>
-        <label class="front-only"><input type="checkbox" id="showFrontBase" checked> <span class="sw sw-feet"></span>바닥 지탱</label>
-        <label class="front-only"><input type="checkbox" id="showFrontMuscle"> <span class="sw sw-muscle"></span>사용 근육 <small class="muted">(추정)</small></label>
+        <label class="side-only"><input type="checkbox" id="showFeet" checked> <span class="sw sw-feet"></span>발</label>
+        <label class="side-only"><input type="checkbox" id="showBack" checked> <span class="sw sw-back"></span>등</label>
+        <label class="side-only"><input type="checkbox" id="showMuscle" checked> <span class="sw sw-muscle"></span>근육</label>
+        <label class="front-only"><input type="checkbox" id="showFrontGhost"> <span class="sw sw-ghost"></span>기준 자세</label>
+        <label class="front-only"><input type="checkbox" id="showFrontGuide" checked> <span class="sw sw-user"></span>정렬</label>
+        <label class="front-only"><input type="checkbox" id="showFrontBase" checked> <span class="sw sw-feet"></span>발</label>
+        <label class="front-only"><input type="checkbox" id="showFrontMuscle"> <span class="sw sw-muscle"></span>근육</label>
       </div>
     </div>
 
@@ -142,6 +143,14 @@
       <ol id="actionList" class="action-list"></ol>
       <div id="goodChips" class="good-chips"></div>
     </section>
+
+    <div id="fusedBlock" hidden>
+        <h2>3D <span class="tag">추정</span> <small class="muted">끌어서 회전</small></h2>
+        <div id="fusedChips" class="chips" role="tablist" aria-label="3D 반복 선택"></div>
+        <ul id="fusedSummary" class="fused-summary"></ul>
+        <canvas id="fusedCanvas" class="fused-canvas"></canvas>
+        <div id="fusedTable"></div>
+      </div>
 
     <div class="actions">
       <button id="saveBtn" class="btn primary">기록 저장</button>
@@ -154,9 +163,16 @@
       <div id="repChips" class="chips" role="tablist" aria-label="반복 선택"></div>
       <div id="metricCards" class="cards"></div>
 
+
+
       <div class="side-only">
         <h2 id="vsTitle">나 vs 기준</h2>
         <div id="vsTable"></div>
+      </div>
+
+      <div class="front-only">
+        <h2>나 vs 기준</h2>
+        <div id="frontVsTable"></div>
       </div>
 
       <h2>피드백 상세</h2>

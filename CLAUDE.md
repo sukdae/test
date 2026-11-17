@@ -14,6 +14,8 @@
   - `front.js` 정면 분석(무릎 안쪽 이동, 골반 기울기, 엉덩이 쏠림, 스탠스, 상체 옆 기울기·흔들림, 체중 분배, 한쪽 발 뜸) + 정면 피드백. 정면 근육은 `muscles.js`의 `estimateFrontMuscles`
   - `feedback.js` 규칙·임계값(`THRESHOLDS`, 근거 주석 `[논문 n]`/`[초깃값]`), `coach.js` 행동 문장 3개(`buildCoaching`, `mergeCoaching`)
   - `exercises.js` 종목·기준 자세(스쿼트 = 논문 기반 `ideal` 하나), `reference.js` 영상→기준 프로필 추출 도구·템포 위상
+  - `fuse3d.js` 둘 다 모드 3D 합성: 반복 위상으로 측면(z,y)+정면(x) 대표 반복 → `fusedRows` 진단표. UI는 `src/ui/fused.js`
+  - 정면 기준 자세 `IDEAL_SQUAT_FRONT`(exercises.js) + `compareFrontIdeal`(front.js), 고스트 `drawFrontGhost`(draw.js)
   - `back.js` 세그멘테이션 마스크로 등 곡률(실험), `geometry.js`/`signal.js`/`landmarks.js` 유틸, `synthetic.js` 측면·정면 합성 데모
 - `src/ui/` — 브라우저 전용: `pose.js`(MediaPipe 래퍼, 유일한 인식 계층), `process.js`(영상→프레임), `capture.js`(카메라), `result.js`(측면 결과), `frontResult.js`(정면 결과), `versus.js`(나 vs 기준 표), `draw.js`(오버레이·근육 도식), `charts.js`, `history.js`, `storage.js`(IndexedDB+localStorage)
 - `src/app.js` 화면 전환. 촬영 방향 `state.mode` = side/front/both, 둘 다는 `state.pair`로 측면→정면 순서.

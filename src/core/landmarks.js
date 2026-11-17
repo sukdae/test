@@ -60,3 +60,22 @@ export function detectFacing(points) {
   if (isNum(f) && Math.abs(f) > 1) return f > 0 ? 1 : -1;
   return 1;
 }
+
+// 촬영 방향 자동 판정: 어깨·엉덩이 좌우 간격 / 몸통 길이. 정면(또는 뒤)이면 크고, 측면이면 작다.
+// 측면 분석의 '정면에 가까움' 경고 기준 0.5, 정면 분석의 '측면에 가까움' 경고 기준 0.35 사이에서 가른다. [초깃값]
+export const VIEW_SPLIT = 0.42;
+export function viewScore({ frames, width: W, height: H }) {
+  const r = [];
+  for (const f of frames) {
+    const lm = f.lm;
+    if (!lm) continue;
+    const ok = (i) => lm[i] && visOf(lm[i]) >= 0.3;
+    if (![11, 12, 23, 24].every(ok)) continue;
+    const sx = (lm[11].x + lm[12].x) / 2 * W, sy = (lm[11].y + lm[12].y) / 2 * H;
+    const hx = (lm[23].x + lm[24].x) / 2 * W, hy = (lm[23].y + lm[24].y) / 2 * H;
+    const torso = Math.hypot(sx - hx, sy - hy);
+    if (torso > 0) r.push((Math.abs(lm[11].x - lm[12].x) + Math.abs(lm[23].x - lm[24].x)) * W / 2 / torso);
+  }
+  return median(r);
+}
+export const detectView = (data) => { const s = viewScore(data); return isNum(s) && s >= VIEW_SPLIT ? 'front' : 'side'; };

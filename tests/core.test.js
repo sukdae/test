@@ -1,15 +1,17 @@
 // 코어 로직 테스트 (브라우저: tests/index.html, Node: node --test tests/)
 import { analyzeSession } from '../src/core/analyze.js';
 import { generateDemo, generateFrontDemo } from '../src/core/synthetic.js';
-import { analyzeFront } from '../src/core/front.js';
+import { analyzeFront, inward, compareFrontIdeal } from '../src/core/front.js';
 import { estimateFrontMuscles } from '../src/core/muscles.js';
 import { referenceAngles } from '../src/core/exercises.js';
 import { chainFromAngles, leanFromVertical, kneeAngle, hipAngle } from '../src/core/geometry.js';
 import { segmentReps } from '../src/core/reps.js';
 import { buildReference, phaseByTempo, curveAngles } from '../src/core/reference.js';
-import { getReference } from '../src/core/exercises.js';
+import { getReference, IDEAL_SQUAT_FRONT } from '../src/core/exercises.js';
 import { buildCoaching, mergeCoaching, compareViews } from '../src/core/coach.js';
 import { josa } from '../src/core/signal.js';
+import { detectView } from '../src/core/landmarks.js';
+import { fuse3D, fusedRows } from '../src/core/fuse3d.js';
 
 export const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -234,4 +236,39 @@ test('사람이 없는 영상은 경고만 내고 죽지 않음', () => {
   const frames = Array.from({ length: 30 }, (_, i) => ({ t: i / 15, lm: null }));
   const res = analyzeSession({ frames, width: 640, height: 480 }, 'squat');
   assert(res.reps.length === 0 && res.warnings.length > 0, 'expected warning');
+});
+
+test('정면: 깊은 스쿼트(무릎이 엉덩이 높이 위)에서는 무릎 정렬을 재지 않음 (오탐 방지)', () => {
+  // 실제 뒷모습 영상의 최저점 좌표: 무릎이 엉덩이보다 위, 무릎은 발목보다 바깥 → 예전 계산은 '안쪽 227px'로 오탐
+  assert(Number.isNaN(inward({ x: 567, y: 1479 }, { x: 390, y: 1440 }, { x: 430, y: 1635 }, 607)), 'knee above hip → NaN');
+  assert(inward({ x: 560, y: 1000 }, { x: 600, y: 1200 }, { x: 540, y: 1400 }, 700) > 0, 'normal cave still detected');
+});
+
+test('정면: 논문 기반 기준 자세 비교표', () => {
+  const ok = compareFrontIdeal(analyzeFront(generateFrontDemo({ reps: [{}, {}, {}] }), 'squat'), IDEAL_SQUAT_FRONT);
+  const by = Object.fromEntries(ok.map((r) => [r.key, r]));
+  assert(by.knee.ok && by.tilt.ok && by.shift.ok && by.lean.ok, JSON.stringify(ok.map((r) => [r.key, r.ok])));
+  const bad = compareFrontIdeal(analyzeFront(generateFrontDemo({ reps: [{ cave: true }, { cave: true }] }), 'squat'), IDEAL_SQUAT_FRONT);
+  assert(bad.find((r) => r.key === 'knee').ok === false, 'cave should be off');
+});
+
+test('3D 합성: 측면+정면 → 대표 반복과 지표', () => {
+  const side = analyzeSession(generateDemo('squat'), 'squat');
+  const fz = fuse3D(side, analyzeFront(generateFrontDemo(), 'squat'));
+  assert(fz && fz.poses.length === 21, 'poses');
+  const b = fz.poses[10];
+  assert(b.L.knee.x > 0 && b.R.knee.x < 0, 'left knee on +x');
+  assert(b.L.hip.y < fz.poses[0].L.hip.y, 'hip lower at bottom');
+  assert(fusedRows(fz.metrics, fz.reps).length >= 4, 'rows');
+  assert(fz.reps.length >= 3, `per-rep ${fz.reps.length}`);
+  const cave = fuse3D(side, analyzeFront(generateFrontDemo({ reps: [{ cave: true }, { cave: true }, { cave: true }] }), 'squat'));
+  assert(cave.metrics.kneeToe.L > fz.metrics.kneeToe.L, `cave turns knee inward: ${cave.metrics.kneeToe.L} vs ${fz.metrics.kneeToe.L}`);
+  assert(fuse3D(side, null) === null, 'needs both');
+  const mixed = fuse3D(side, analyzeFront(generateFrontDemo({ reps: [{}, { cave: true }, {}] }), 'squat'));
+  assert(mixed.reps[1].metrics.kneeToe.L > mixed.reps[0].metrics.kneeToe.L + 5, 'rep 2 knee turns inward');
+});
+
+test('촬영 방향 자동 판정', () => {
+  assert(detectView(generateFrontDemo()) === 'front', 'front demo');
+  assert(detectView(generateDemo('squat')) === 'side', 'side demo');
 });

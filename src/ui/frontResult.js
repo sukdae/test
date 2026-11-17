@@ -1,9 +1,10 @@
 // 정면 분석 결과 화면 (측면 결과 화면과 같은 영역을 같이 씁니다)
-import { FRONT_THRESHOLDS } from '../core/front.js';
+import { FRONT_THRESHOLDS, compareFrontIdeal } from '../core/front.js';
+import { IDEAL_SQUAT_FRONT } from '../core/exercises.js';
 import { estimateFrontMuscles, levelOf } from '../core/muscles.js';
 import { buildCoaching } from '../core/coach.js';
 import { isNum } from '../core/signal.js';
-import { drawSkeleton, drawFrontOverlay, drawFrontBase, drawFrontMuscles, heatColor, cssVar } from './draw.js';
+import { drawSkeleton, drawFrontOverlay, drawFrontBase, drawFrontMuscles, drawFrontGhost, heatColor, cssVar } from './draw.js';
 import { lineChart } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -100,6 +101,16 @@ export function showFrontResult(fr, opts = {}) {
     if (li.dataset.rep) { select(Number(li.dataset.rep)); $('resultStage').scrollIntoView({ behavior: 'smooth', block: 'center' }); play(); }
   }, sig);
 
+  // 나 vs 기준 (논문 기반 정면 기준 자세)
+  const vsFmt = { stance: (x) => `${Math.round(x * 100)}%`, knee: (x) => `${x > 0 ? '안쪽 ' : ''}${Math.round(Math.abs(x) * 100)}%`, tilt: (x) => `${x.toFixed(0)}°`, shift: (x) => `${Math.round(x * 100)}%`, lean: (x) => `${x.toFixed(0)}°`, weight: (x) => `${Math.round(x)} : ${Math.round(100 - x)}` };
+  const vsRows = compareFrontIdeal(fr, IDEAL_SQUAT_FRONT);
+  $('frontVsTable').innerHTML = `
+    <table class="vs">
+      <thead><tr><th></th><th>나</th><th>${esc(IDEAL_SQUAT_FRONT.short)}</th><th></th></tr></thead>
+      <tbody>${vsRows.map((r) => `<tr><th>${r.label}</th><td>${isNum(r.me) ? vsFmt[r.key](r.me) : '–'}</td><td>${esc(r.refText)}</td><td class="diff ${r.ok === null ? '' : r.ok ? 'same' : 'off'}">${r.ok === null ? '' : r.ok ? '✓' : '⚠︎'}</td></tr>`).join('')}</tbody>
+    </table>
+    <p class="sub">근거: Straub & Powers 2024 · 좌우 대칭은 초깃값</p>`;
+
   // 피드백 상세
   const ICON = { warn: '⚠︎', info: 'ℹ︎', good: '✓' };
   $('feedbackList').innerHTML = fr.feedback.map((f) => `
@@ -155,7 +166,7 @@ export function showFrontResult(fr, opts = {}) {
 
   // 렌더 루프
   const ctx = canvas.getContext('2d');
-  const showSkel = $('showSkel'), showGuide = $('showFrontGuide'), showBase = $('showFrontBase'), showFM = $('showFrontMuscle');
+  const showGhost = $('showFrontGhost'), showSkel = $('showSkel'), showGuide = $('showFrontGuide'), showBase = $('showFrontBase'), showFM = $('showFrontMuscle');
   let lastKey = '', lastTl = 0;
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
@@ -164,7 +175,7 @@ export function showFrontResult(fr, opts = {}) {
     if (selected && isPlaying()) { const r = reps[selected - 1]; if (time > t[r.end] + 0.3) { setTime(t[r.start]); time = t[r.start]; } }
     $('playBtn').textContent = isPlaying() ? '❚❚' : '▶';
     const i = frameAt(time);
-    const key = `${i}|${showSkel.checked}|${showGuide.checked}|${showBase.checked}|${showFM.checked}`;
+    const key = `${i}|${showGhost.checked}|${showSkel.checked}|${showGuide.checked}|${showBase.checked}|${showFM.checked}`;
     if (key !== lastKey) {
       lastKey = key;
       ctx.clearRect(0, 0, W, H);
@@ -172,6 +183,7 @@ export function showFrontResult(fr, opts = {}) {
       const lm = fr.frames[i]?.lm;
       if (showFM.checked) drawFrontMuscles(ctx, lm, fm, effortAt(i), W, H);
       if (showSkel.checked) drawSkeleton(ctx, lm, W, H);
+      if (showGhost.checked) drawFrontGhost(ctx, lm, W, H);
       if (showBase.checked) drawFrontBase(ctx, lm, s.leftPct[i], s.liftL[i], s.liftR[i], FRONT_THRESHOLDS, W, H);
       if (showGuide.checked) drawFrontOverlay(ctx, lm, { kneeRatio: s.kneeRatio[i], inL: s.inL[i], inR: s.inR[i], tilt: s.tiltRel[i], shift: s.shiftRel[i] }, FRONT_THRESHOLDS, W, H);
       $('seek').value = String(Math.round(((time - T0) / (T1 - T0 || 1)) * 1000));

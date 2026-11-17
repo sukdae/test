@@ -325,6 +325,49 @@ export function drawFrontOverlay(ctx, lm, v, T, W, H) {
   ctx.restore();
 }
 
+// ---- 정면: 논문 기반 기준 자세 고스트 ----
+// 발은 내 발 위치 그대로 두고, 골반은 수평·양발 가운데, 상체는 수직, 무릎은 엉덩이–발목 선 위(깊이 앉아
+// 허벅지가 수평에 가까우면 발 위)에 놓은 자세를 점선으로 그린다. 표시용 도식이며 판정에는 쓰지 않는다.
+export function drawFrontGhost(ctx, lm, W, H) {
+  if (!lm) return;
+  const P = (i) => { const p = lm[i]; return p && p.v >= VIS_MIN ? { x: p.x * W, y: p.y * H } : null; };
+  const hl = P(23), hr = P(24), kl = P(25), kr = P(26), al = P(27), ar = P(28), sl = P(11), sr = P(12);
+  if (!hl || !hr || !kl || !kr || !al || !ar) return;
+  const fl = P(31) || al, fr = P(32) || ar;
+  const scale = Math.max(W, H) / 1000;
+  const am = (al.x + ar.x) / 2, hy = (hl.y + hr.y) / 2, hHalf = Math.abs(hl.x - hr.x) / 2;
+  const sgn = Math.sign(hl.x - hr.x) || 1; // 왼쪽 엉덩이가 화면 어느 쪽인지
+  const hip = { L: { x: am + sgn * hHalf, y: hy }, R: { x: am - sgn * hHalf, y: hy } };
+  const kneeOf = (h, k, a, f) => {
+    const t = (k.y - h.y) / ((a.y - h.y) || 1);
+    const lineX = h.x + (a.x - h.x) * Math.max(0, Math.min(1, t));
+    const footX = (a.x + f.x) / 2;
+    const w = Math.max(0, Math.min(1, (t - 0.1) / 0.3)); // 허벅지가 수평에 가까울수록 발 위로
+    return { x: footX + (lineX - footX) * w, y: k.y };
+  };
+  const knee = { L: kneeOf(hip.L, kl, al, fl), R: kneeOf(hip.R, kr, ar, fr) };
+  ctx.save();
+  ctx.strokeStyle = cssVar('--c-ghost') || '#e879f9';
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = Math.max(3, 6 * scale);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.setLineDash([14 * scale, 10 * scale]);
+  ctx.beginPath();
+  ctx.moveTo(al.x, al.y); ctx.lineTo(knee.L.x, knee.L.y); ctx.lineTo(hip.L.x, hip.L.y);
+  ctx.lineTo(hip.R.x, hip.R.y); ctx.lineTo(knee.R.x, knee.R.y); ctx.lineTo(ar.x, ar.y);
+  if (sl && sr) {
+    const torso = Math.hypot((sl.x + sr.x) / 2 - (hl.x + hr.x) / 2, (sl.y + sr.y) / 2 - hy);
+    const sy = hy - torso, sHalf = Math.abs(sl.x - sr.x) / 2;
+    ctx.moveTo(am, hy); ctx.lineTo(am, sy);
+    ctx.moveTo(am - sHalf, sy); ctx.lineTo(am + sHalf, sy);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (const p of [knee.L, knee.R, hip.L, hip.R]) { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * scale, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
 // ---- 정면: 바닥 지탱 (양발 체중 분배 · 발 뜸) ----
 export function drawFrontBase(ctx, lm, leftPct, liftL, liftR, T, W, H) {
   if (!lm || !isNum(leftPct)) return;
