@@ -10,6 +10,7 @@
 import { SIDES, visOf } from './landmarks.js';
 import { median, isNum } from './signal.js';
 import { DEG } from './geometry.js';
+import { referenceAngles, getReference, bell } from './exercises.js';
 
 export const FUSE_N = 21; // 위상 표본 수 (0, 0.05, … 1)
 export const JOINTS = ['shoulder', 'hip', 'knee', 'ankle', 'foot'];
@@ -197,4 +198,44 @@ export function fusedRows(m, repsList = []) {
   const kl = m.knee3D.L, kr = m.knee3D.R;
   if (isNum(kl) || isNum(kr)) rows.push({ key: 'knee3D', label: '무릎 각도', value: `${isNum(kl) ? kl.toFixed(0) : '–'}° / ${isNum(kr) ? kr.toFixed(0) : '–'}°`, ok: null, reps: [] });
   return rows;
+}
+
+// 논문 기반 기준 자세를 같은 3D 좌표로 만든다(내 몸 길이·발 위치에 맞춤).
+//   앞뒤·높이: 측면 기준 자세 각도(정강이·허벅지·상체 기울기)  [exercises.js 의 IDEAL_SQUAT]
+//   좌우: 골반·어깨 수평, 상체 옆 기울기 0, 무릎은 앉을수록 발끝 위로  [IDEAL_SQUAT_FRONT]
+// 표시용 도식이며 판정에는 쓰지 않는다.
+export function idealPoses(fz, exId = 'squat') {
+  const p0 = fz?.poses?.[0];
+  if (!p0) return null;
+  const d3 = (a, b) => (a && b ? Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z) : NaN);
+  const len = (a, b) => median(['L', 'R'].map((S) => d3(p0[S][a], p0[S][b])).filter(isNum));
+  const Ls = len('knee', 'ankle'), Lt = len('hip', 'knee'), Lto = len('shoulder', 'hip');
+  if (![Ls, Lt, Lto].every(isNum)) return null;
+  const half = (j) => (p0.L[j] && p0.R[j] ? Math.abs(p0.L[j].x - p0.R[j].x) / 2 : NaN);
+  const hipHalf = half('hip'), shHalf = isNum(half('shoulder')) ? half('shoulder') : hipHalf * 1.4;
+  const ref = getReference(exId, 'ideal');
+  const RAD = Math.PI / 180;
+  const out = [];
+  for (let k = 0; k < FUSE_N; k++) {
+    const ph = k / (FUSE_N - 1), a = referenceAngles(exId, ph, ref), f = bell(ph);
+    const pose = { L: {}, R: {} };
+    for (const S of ['L', 'R']) {
+      const sg = S === 'L' ? 1 : -1;
+      const ankle = p0[S].ankle;
+      if (!ankle) return null;
+      const foot = p0[S].foot || ankle;
+      const step = (p, deg, l) => ({ y: p.y + Math.cos(deg * RAD) * l, z: p.z + Math.sin(deg * RAD) * l });
+      const kn = step(ankle, a.shin, Ls), hp = step(kn, a.thigh, Lt), sh = step(hp, a.trunk, Lto);
+      const hipX = sg * hipHalf;
+      const kneeX0 = hipX + (ankle.x - hipX) * (Lt / (Lt + Ls));
+      pose[S] = {
+        ankle, foot,
+        knee: { x: kneeX0 + (foot.x - kneeX0) * f, ...kn },
+        hip: { x: hipX, ...hp },
+        shoulder: { x: sg * shHalf, ...sh },
+      };
+    }
+    out.push(pose);
+  }
+  return out;
 }

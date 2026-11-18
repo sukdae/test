@@ -1,5 +1,5 @@
 // 둘 다 모드: 측면+정면 3D 합성 진단표와 돌려 볼 수 있는 3D 뼈대
-import { fusedRows, FUSE_N } from '../core/fuse3d.js';
+import { fusedRows, idealPoses, FUSE_N } from '../core/fuse3d.js';
 import { cssVar } from './draw.js';
 
 const $ = (id) => document.getElementById(id);
@@ -42,7 +42,9 @@ export function showFused(fz) {
   canvas.addEventListener('pointermove', (e) => { if (dragX === null) return; yaw += (e.clientX - dragX) * 0.01; dragX = e.clientX; }, { signal: ac.signal });
   canvas.addEventListener('pointerup', () => { dragX = null; }, { signal: ac.signal });
   $('fusedChips').addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { sel = Number(b.dataset.r); render(); } }, { signal: ac.signal });
-  const pitch = 0.25, LC = '#38bdf8', RC = '#f472b6';
+  const pitch = 0.25, LC = '#38bdf8', RC = '#fb923c', IC = cssVar('--c-ghost') || '#e879f9';
+  const ideal = idealPoses(fz);
+  const showIdeal = $('fusedIdeal');
   const start = performance.now();
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
@@ -73,6 +75,14 @@ export function showFused(fz) {
     ctx.fillStyle = ctx.strokeStyle; ctx.font = '11px system-ui, sans-serif'; ctx.fillText('앞', f1.x + 4, f1.y);
     // 뼈대
     const line = (a, b, color, width = 4) => { if (!a || !b) return; const A = proj(a), B = proj(b); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); };
+    // 기준 자세 (점선, 같은 위상)
+    const ip = ideal && showIdeal?.checked ? ideal[Math.round(ph * (FUSE_N - 1))] : null;
+    if (ip) {
+      ctx.save(); ctx.setLineDash([6, 5]); ctx.globalAlpha = 0.9;
+      for (const S of ['L', 'R']) { const J = ip[S]; line(J.shoulder, J.hip, IC, 3); line(J.hip, J.knee, IC, 3); line(J.knee, J.ankle, IC, 3); }
+      line(ip.L.hip, ip.R.hip, IC, 2); line(ip.L.shoulder, ip.R.shoulder, IC, 2);
+      ctx.restore();
+    }
     for (const [S, color] of [['L', LC], ['R', RC]]) {
       const J = pose[S];
       line(J.shoulder, J.hip, color); line(J.hip, J.knee, color); line(J.knee, J.ankle, color); line(J.ankle, J.foot, color, 3);
@@ -84,6 +94,7 @@ export function showFused(fz) {
       const K = proj(k); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(K.x, K.y, 5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.fillStyle = LC; ctx.fillText('● 왼쪽', 8, 16); ctx.fillStyle = RC; ctx.fillText('● 오른쪽', 8, 32);
+    if (ip) { ctx.fillStyle = IC; ctx.fillText('┄ 기준 자세', 8, 48); }
   };
   raf = requestAnimationFrame(loop);
 }

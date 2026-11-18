@@ -11,7 +11,7 @@ import { getReference, IDEAL_SQUAT_FRONT } from '../src/core/exercises.js';
 import { buildCoaching, mergeCoaching, compareViews } from '../src/core/coach.js';
 import { josa } from '../src/core/signal.js';
 import { detectView } from '../src/core/landmarks.js';
-import { fuse3D, fusedRows } from '../src/core/fuse3d.js';
+import { fuse3D, fusedRows, idealPoses } from '../src/core/fuse3d.js';
 
 export const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -271,4 +271,15 @@ test('3D 합성: 측면+정면 → 대표 반복과 지표', () => {
 test('촬영 방향 자동 판정', () => {
   assert(detectView(generateFrontDemo()) === 'front', 'front demo');
   assert(detectView(generateDemo('squat')) === 'side', 'side demo');
+});
+
+test('3D 기준 자세: 내 발 위치에서 시작, 최저점에서 허벅지 평행·골반 수평', () => {
+  const fz = fuse3D(analyzeSession(generateDemo('squat'), 'squat'), analyzeFront(generateFrontDemo(), 'squat'));
+  const ip = idealPoses(fz);
+  assert(ip && ip.length === 21, 'poses');
+  const b = ip[10];
+  assert(Math.abs(b.L.hip.y - b.L.knee.y) < 0.05, `thigh parallel: hip ${b.L.hip.y} knee ${b.L.knee.y}`);
+  assert(Math.abs(b.L.hip.y - b.R.hip.y) < 1e-9 && b.L.hip.x > 0 && b.R.hip.x < 0, 'pelvis level, left on +x');
+  assert(b.L.ankle === fz.poses[0].L.ankle, 'feet planted');
+  assert(ip[0].L.hip.y > b.L.hip.y + 0.3, 'hip lower at bottom');
 });
