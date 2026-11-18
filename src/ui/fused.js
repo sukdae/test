@@ -43,7 +43,7 @@ export function showFused(fz) {
   canvas.addEventListener('pointerup', () => { dragX = null; }, { signal: ac.signal });
   $('fusedChips').addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { sel = Number(b.dataset.r); render(); } }, { signal: ac.signal });
   const pitch = 0.25, LC = '#38bdf8', RC = '#fb923c', IC = cssVar('--c-ghost') || '#e879f9';
-  const ideal = idealPoses(fz);
+  const ideal = idealPoses(fz, fz.exercise);
   const showIdeal = $('fusedIdeal');
   const start = performance.now();
   const loop = (now) => {

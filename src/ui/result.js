@@ -9,7 +9,7 @@ import { setSetting, getSettings } from './storage.js';
 import { topDiffs } from '../core/compare.js';
 import { toCSV } from '../core/analyze.js';
 import { isNum, mean, median, percentile, clamp } from '../core/signal.js';
-import { drawSkeleton, drawGhost, drawMuscles, drawFootContact, drawBackLine, FOOT_LIFT_WARN, muscleSVG, heatColor, cssVar } from './draw.js';
+import { drawSkeleton, drawGhost, drawMuscles, drawFootContact, drawBalance, drawBackLine, FOOT_LIFT_WARN, muscleSVG, heatColor, cssVar } from './draw.js';
 import { lineChart } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -128,9 +128,13 @@ export function showResult(result, opts = {}) {
       cards.push(['당기기 시간', sec(m.ascent), '최저점 → 최고점']);
     }
     const lifted = (rr) => rr.metrics.heelLift > FOOT_LIFT_WARN;
-    if (r) cards.push(['발바닥 접지', lifted(r) ? '뒤꿈치 들림' : '고정 ✓', `최대 들림 ${(r.metrics.heelLift * 100).toFixed(1)}% (다리 길이 대비)`]);
+    // 데드리프트 측면은 원판이 발을 가려 발 관절점이 부정확하고, 판정 규칙도 없어 카드를 숨긴다
+    if (result.exercise === 'deadlift') { /* 생략 */ } else if (r) cards.push(['발바닥 접지', lifted(r) ? '뒤꿈치 들림' : '고정 ✓', `최대 들림 ${(r.metrics.heelLift * 100).toFixed(1)}% (다리 길이 대비)`]);
     else if (reps.length) cards.push(['발바닥 접지', `${reps.filter((x) => !lifted(x)).length}/${reps.length}회 고정`, '뒤꿈치가 발끝 대비 뜨지 않음']);
     if (isNum(m.backRound)) cards.push(['등 곡률 변화 (실험)', `${m.backRound >= 0 ? '+' : ''}${m.backRound.toFixed(1)}%`, m.backRound > 4 ? '서 있을 때보다 둥글어짐 (참고)' : m.backRound < -4 ? '서 있을 때보다 젖혀짐 (참고)' : '서 있을 때와 비슷 (±4% 이내)']);
+    const balOn = result.exercise !== 'deadlift' || result.load?.barKg > 0;
+    if (balOn && isNum(m.comShift)) cards.push(['무게중심 이동 (추정)', Math.abs(m.comShift) <= 0.25 ? '안정 ✓' : m.comShift > 0 ? '앞으로 쏠림' : '뒤로 쏠림', `최저점 · 서 있을 때보다 발 길이의 ${m.comShift >= 0 ? '+' : '−'}${Math.round(Math.abs(m.comShift) * 100)}%${result.load?.barKg > 0 ? ` · 바벨 ${result.load.barKg}kg 포함` : ''}`]);
+    if (!r && result.load) cards.push(['무게', `몸 ${result.load.bodyKg}kg · 바벨 ${result.load.barKg}kg`, '입력값 (기기에만 저장)']);
     if (isNum(m.trunkWobble)) cards.push(['상체 흔들림', `±${m.trunkWobble.toFixed(1)}°`, m.trunkWobble > 2.5 ? '흔들림 있음' : '안정']);
     cards.push(['기준과 평균 차이', isNum(diff) ? `${Math.round(diff)}°` : '–', '세 각도 평균']);
     $('metricCards').innerHTML = cards.map(([k, val, sub]) => `<div class="metric"><span>${k}</span><b>${val}</b><small>${sub}</small></div>`).join('');
@@ -253,16 +257,16 @@ export function showResult(result, opts = {}) {
       lastDrawn = key;
       ctx.clearRect(0, 0, W, H);
       if (!videoUrl) { ctx.fillStyle = cssVar('--stage-bg'); ctx.fillRect(0, 0, W, H); drawFloor(ctx, W, H, s.ankleY[i]); }
-      if (showMuscle.checked) drawMuscles(ctx, result.frames[i]?.lm, result.side, result.facing, result.muscles, effortAt(i), W, H);
+      if (showMuscle.checked) drawMuscles(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, result.facings?.[i] || result.facing, result.muscles, effortAt(i), W, H);
       if (showGhost.checked) {
         const r = repAt(i);
         const tempoMode = ghostMode.value === 'tempo' && result.reference?.tempo;
         const phase = !r ? 0 : tempoMode ? phaseByTempo(result.reference.tempo, t[i] - t[r.start]) : r.phase[i - r.start];
-        drawGhost(ctx, result.exercise, phase, { x: s.ankleX[i], y: s.ankleY[i] }, body, W, H, refProfile);
+        drawGhost(ctx, result.exercise, phase, { x: s.ankleX[i], y: s.ankleY[i] }, result.facings ? { ...body, facing: result.facings[i] } : body, W, H, refProfile);
       }
-      if (showFeet.checked) drawFootContact(ctx, result.frames[i]?.lm, result.side, footLift(i), W, H);
-      if (showBack.checked) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facing, s.backDelta?.[i], W, H);
-      if (showSkel.checked) drawSkeleton(ctx, result.frames[i]?.lm, W, H, { side: result.side, labels: { knee: s.knee[i], hip: s.hip[i] } });
+      if (showFeet.checked) { if (result.exercise !== 'deadlift') drawFootContact(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || result.load?.barKg > 0) drawBalance(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
+      if (showBack.checked) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
+      if (showSkel.checked) drawSkeleton(ctx, result.frames[i]?.lm, W, H, { side: result.sides?.[i] || result.side, labels: { knee: s.knee[i], hip: s.hip[i] } });
       $('seek').value = String(Math.round(((time - T0) / (T1 - T0 || 1)) * 1000));
     }
     if (more.open && now - lastTl > 120) { lastTl = now; renderTimeline(time); }

@@ -29,6 +29,7 @@ const MAP = {
     ['erectors', '안정화', (x) => 0.1 + 0.6 * Math.sin(x.trunk * RAD) + 0.5 * x.hipArm],
     ['calves', '안정화', (x) => 0.15 + 0.3 * x.kneeArm],
   ],
+  // 데드리프트: 엉덩이 신전근(대둔근·햄스트링)·척추기립근 중심, 대퇴사두는 바닥 근처에서 큼 [논문 13, 16, 21, 22]
   deadlift: [
     ['glutes', '주동근', (x) => 0.3 + 0.4 * x.hipFlex + 0.6 * x.hipArm],
     ['hamstrings', '주동근', (x) => 0.3 + 0.3 * x.hipFlex + 0.7 * x.hipArm],
@@ -70,6 +71,7 @@ export function estimateFrontMuscles(front, sideMuscles = null) {
     const depth = clamp((100 - mean(front.reps.map((r) => r.metrics.depthPct))) / 55);
     Object.assign(base, { quads: clamp(0.3 + 0.6 * depth), glutes: clamp(0.25 + 0.6 * depth), adductors: clamp(0.2 + 0.5 * depth) });
   }
+  // 넓은 스탠스: 대둔근·내전근 활성에 영향, 대퇴사두는 무관 [논문 34, 35]. 1.15배는 [초깃값]
   const wide = front.stance?.category === '넓음' ? 1.15 : 1;
   const leftShare = clamp((mean(front.reps.map((r) => r.metrics.leftPct)) || 50) / 100);
   return FRONT_SET.filter((id) => base[id] != null).map((id) => {

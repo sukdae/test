@@ -1,5 +1,5 @@
 // 코어 로직 테스트 (브라우저: tests/index.html, Node: node --test tests/)
-import { analyzeSession } from '../src/core/analyze.js';
+import { analyzeSession, comOnFoot, cleanLoad } from '../src/core/analyze.js';
 import { generateDemo, generateFrontDemo } from '../src/core/synthetic.js';
 import { analyzeFront, inward, compareFrontIdeal } from '../src/core/front.js';
 import { estimateFrontMuscles } from '../src/core/muscles.js';
@@ -81,14 +81,32 @@ test('스쿼트 데모: 정상 반복은 기준과 거의 일치, 위상은 단�
   assert(Math.abs(r1.metrics.descent - 1.1) < 0.3, `descent ${r1.metrics.descent}`);
 });
 
-test('데드리프트 데모: 5회, 락아웃·젖힘·엉덩이 먼저 감지', () => {
+test('데드리프트 데모: 5회, 락아웃·젖힘 감지, 엉덩이 먼저는 경고하지 않음(논문 15·22)', () => {
   const res = analyzeSession(generateDemo('deadlift'), 'deadlift');
   assert(res.reps.length === 5, `reps=${res.reps.length}`);
   const byId = Object.fromEntries(res.feedback.map((x) => [x.id, x.reps]));
-  assert(byId['hips-first']?.join() === '3', `hips ${byId['hips-first']}`);
+  assert(!byId['hips-first'], 'hips-first should not fire for deadlift');
   assert(byId['lockout']?.join() === '4', `lockout ${byId['lockout']}`);
   assert(byId['lean-back']?.join() === '5', `leanback ${byId['lean-back']}`);
   assert(!byId['squatty'], 'squatty should not fire');
+});
+
+test('데드리프트 기준 자세: 3단계 순서와 스티킹 포인트(논문 22)', () => {
+  const at = (p) => referenceAngles('deadlift', p, getReference('deadlift', 'ideal'));
+  const floor = at(0.5), stick = at(0.7), mid = at(0.85), top = at(1);
+  assert(Math.abs(stick.thigh + 30) < 1 && Math.abs(stick.shin - 15) < 1, `stick thigh ${stick.thigh} shin ${stick.shin}`);
+  // ① 무릎 위주: 무릎 변화 > 엉덩이 변화, ② 엉덩이 위주: 엉덩이 변화 > 무릎 변화
+  assert(stick.knee - floor.knee > stick.hip - floor.hip, `phase1 knee ${stick.knee - floor.knee} hip ${stick.hip - floor.hip}`);
+  assert(mid.hip - stick.hip > mid.knee - stick.knee, `phase2 hip ${mid.hip - stick.hip} knee ${mid.knee - stick.knee}`);
+  assert(top.knee > 170 && top.hip > 170, 'lockout');
+  assert(Math.abs(at(0.3).knee - at(0.7).knee) < 1e-9, 'descent mirrors ascent');
+});
+
+test('데드리프트 정면: 스탠스로 컨벤셔널/스모 구분', () => {
+  const conv = analyzeFront(generateFrontDemo(), 'deadlift');
+  assert(conv.stance && conv.stance.category !== '스모', `cat ${conv.stance?.category} ${conv.stance?.ratio}`);
+  const ids = conv.feedback.map((f) => f.id);
+  assert(!ids.includes('stance-wide'), 'squat stance rule not used');
 });
 
 test('프레임 15% 누락과 낮은 fps(15)에서도 반복 수 유지', () => {
@@ -111,10 +129,16 @@ test('코어: 등 말림 반복만 감지하고 나머지는 중립', () => {
   for (const [ex, bad] of [['squat', 4], ['deadlift', 3]]) {
     const res = analyzeSession(generateDemo(ex), ex);
     const byId = Object.fromEntries(res.feedback.map((x) => [x.id, x.reps]));
-    assert(byId['back-round']?.join() === String(bad), `${ex} back-round ${byId['back-round']}`);
+    // 데드리프트는 반복별 단정 대신 '반복할수록 커지는지'만 본다 [논문 24, 25]
+    if (ex === 'squat') assert(byId['back-round']?.join() === String(bad), `${ex} back-round ${byId['back-round']}`);
+    else assert(!byId['back-round'] && !byId['dl-back-trend'], `deadlift per-rep ${byId['back-round']} trend ${byId['dl-back-trend']}`);
+    assert(res.reps[bad - 1].metrics.backRound > 3, `${ex} rep${bad} measured ${res.reps[bad - 1].metrics.backRound}`);
     for (const r of res.reps) if (r.index !== bad) assert(Math.abs(r.metrics.backRound) < 1.5, `${ex} rep${r.index} back ${r.metrics.backRound}`);
     assert(!byId['spine-note'], 'spine-note should hide when back data exists');
   }
+  const tired = analyzeSession(generateDemo('deadlift', { reps: [{}, {}, {}, { round: true }] }), 'deadlift');
+  const trend = tired.feedback.find((f) => f.id === 'dl-back-trend');
+  assert(trend && trend.reps.join() === '4', `trend ${trend?.reps}`);
 });
 
 test('코어: 등 데이터가 없으면(예전 기록) 곡률 판정 없이 동작', () => {
@@ -178,6 +202,8 @@ test('정면: 5회, 무릎 모임·엉덩이 쏠림·골반 기울기를 해당 
   assert(res.reps.length === 5, `reps=${res.reps.length}`);
   const byId = Object.fromEntries(res.feedback.map((x) => [x.id, x.reps]));
   assert(byId['knee-cave']?.join() === '2', `cave ${byId['knee-cave']}`);
+  const cave = res.feedback.find((x) => x.id === 'knee-cave');
+  assert(cave.level === 'info' && cave.title.includes('2D'), `2D 정면 무릎은 참고로만 [논문 29]: ${cave.level} ${cave.title}`);
   assert(byId['hip-shift']?.join() === '3', `shift ${byId['hip-shift']}`);
   assert(byId['pelvic-tilt']?.join() === '4', `tilt ${byId['pelvic-tilt']}`);
   const shiftItem = res.feedback.find((x) => x.id === 'hip-shift');
@@ -282,4 +308,64 @@ test('3D 기준 자세: 내 발 위치에서 시작, 최저점에서 허벅지 �
   assert(Math.abs(b.L.hip.y - b.R.hip.y) < 1e-9 && b.L.hip.x > 0 && b.R.hip.x < 0, 'pelvis level, left on +x');
   assert(b.L.ankle === fz.poses[0].L.ankle, 'feet planted');
   assert(ip[0].L.hip.y > b.L.hip.y + 0.3, 'hip lower at bottom');
+});
+
+test('무게중심(앞뒤) 추정: 발 위 위치, 방향과 무관, 서 있을 때 대비 이동', () => {
+  const p = { heel: { x: 100 }, foot: { x: 200 }, ankle: { x: 110 }, knee: { x: 160 }, hip: { x: 90 }, shoulder: { x: 150 } };
+  const b = comOnFoot(p);
+  assert(b > 0.2 && b < 0.8, `mid ${b}`);
+  const fwd = comOnFoot({ ...p, shoulder: { x: 330 }, hip: { x: 200 } });
+  assert(fwd > 0.75, `fwd ${fwd}`);
+  const flipped = comOnFoot({ heel: { x: 200 }, foot: { x: 100 }, ankle: { x: 190 }, knee: { x: 140 }, hip: { x: 210 }, shoulder: { x: 150 } });
+  assert(Math.abs(flipped - b) < 1e-9, 'facing-independent');
+  const res = analyzeSession(generateDemo('squat'), 'squat');
+  assert(res.reps.every((r) => Number.isFinite(r.metrics.comShift)), 'measured on demo');
+});
+
+test('무게 입력: 바벨을 포함하면 무게중심이 바벨 쪽으로, 데드리프트는 바벨 무게가 있어야 판정', () => {
+  const p = { heel: { x: 100 }, foot: { x: 200 }, ankle: { x: 110 }, knee: { x: 160 }, hip: { x: 90 }, shoulder: { x: 150 }, wrist: { x: 170, v: 1 } };
+  const body = comOnFoot(p), withBar = comOnFoot(p, { bodyKg: 70, barKg: 100 }, 'squat');
+  assert(withBar > body && Math.abs(withBar - (body * 70 + 0.5 * 100) / 170) < 1e-9, `squat bar at shoulder ${body} → ${withBar}`);
+  const dl = comOnFoot(p, { bodyKg: 70, barKg: 100 }, 'deadlift');
+  assert(Math.abs(dl - (body * 70 + 0.7 * 100) / 170) < 1e-9, `deadlift bar at wrist ${dl}`);
+  assert(Number.isNaN(comOnFoot({ ...p, wrist: { x: 170, v: 0.1 } }, { bodyKg: 70, barKg: 100 }, 'deadlift')), 'hidden wrist → NaN');
+  assert(cleanLoad({ bodyKg: '70', barKg: '' }).barKg === 0 && cleanLoad({ bodyKg: 5 }) === null, 'clean');
+  const noLoad = analyzeSession(generateDemo('deadlift'), 'deadlift');
+  assert(!noLoad.feedback.some((f) => f.id.startsWith('balance') || f.id === 'good-balance'), 'deadlift without bar: no balance');
+  const loaded = analyzeSession(generateDemo('deadlift'), 'deadlift', { load: { bodyKg: 70, barKg: 100 } });
+  assert(loaded.load.barKg === 100 && loaded.reps.every((r) => r.metrics.withBar), 'load kept');
+});
+
+test('뒤엉킨 관절점 프레임(관절 각도 180° 초과)은 버림', () => {
+  const demo = generateDemo('deadlift');
+  // 마지막 20프레임의 어깨를 엉덩이 아래로 보내 불가능한 자세를 만든다 (실제 영상에서 본 현상)
+  demo.frames.slice(-20).forEach((f) => { if (f.lm) { for (const i of [11, 12]) f.lm[i] = { ...f.lm[i], y: f.lm[23].y + 0.15 }; } });
+  const res = analyzeSession(demo, 'deadlift');
+  assert(res.series.hip.every((v) => !Number.isFinite(v) || v <= 210), 'hip angle capped');
+  assert(res.reps.every((r) => r.metrics.topHip <= 210), `topHip ${res.reps.map((r) => r.metrics.topHip)}`);
+});
+
+test('측면 분석인데 정면처럼 찍힌 영상: 경고는 참고로 낮추고 다시 찍기 안내', () => {
+  const res = analyzeSession(generateFrontDemo(), 'squat');
+  assert(res.warnings.some((w) => w.startsWith('정면에 가까운 촬영')), 'off-angle warning');
+  assert(res.feedback.every((f) => f.level !== 'warn'), 'no warn');
+  const c = buildCoaching(res);
+  assert(c.actions.length === 1 && c.actions[0].kind === 'retake', c.actions.map((a) => a.text).join());
+});
+
+test('중간에 방향이 바뀌는 영상: 프레임마다 방향을 정해 두 구간 모두 분석', () => {
+  const a = generateDemo('squat', { reps: [{}, {}] }), b = generateDemo('squat', { reps: [{}, {}], seed: 9 });
+  // b를 좌우 반전 + 왼/오른 관절 바꿈 = 반대 방향을 보고 선 사람
+  const swap = [[11, 12], [13, 14], [15, 16], [23, 24], [25, 26], [27, 28], [29, 30], [31, 32], [7, 8]];
+  const T = a.frames.at(-1).t + 1 / 30;
+  const flipped = b.frames.map((f) => {
+    if (!f.lm) return { ...f, t: f.t + T };
+    const lm = f.lm.map((p) => (p ? { ...p, x: 1 - p.x } : p));
+    for (const [l, r] of swap) [lm[l], lm[r]] = [lm[r], lm[l]];
+    return { ...f, t: f.t + T, lm, back: undefined };
+  });
+  const res = analyzeSession({ ...a, frames: [...a.frames.map((f) => ({ ...f, back: undefined })), ...flipped] }, 'squat');
+  assert(res.reps.length === 4, `reps=${res.reps.length}`);
+  assert(res.warnings.some((w) => w.includes('방향이 바뀐')), res.warnings.join());
+  assert(res.coverage > 0.9, `coverage ${res.coverage}`);
 });

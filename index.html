@@ -59,6 +59,10 @@
       <button data-mode="side">측면</button><button data-mode="front">정면</button><button data-mode="both">둘 다</button>
     </div>
     <p class="hint center" id="viewHint"></p>
+    <div class="load-row" aria-label="무게 (선택)">
+      <label>몸무게 <input type="number" id="bodyKg" inputmode="decimal" min="20" max="300" step="0.5" placeholder="선택"> kg</label>
+      <label>바벨 <input type="number" id="barKg" inputmode="decimal" min="0" max="600" step="0.5" placeholder="맨몸 0"> kg</label>
+    </div>
     <div class="actions">
       <button id="recordBtn" class="btn primary">● 촬영</button>
       <label class="btn">영상 불러오기<input type="file" accept="video/*" id="fileInput" multiple hidden></label>
@@ -145,6 +149,7 @@
       <div class="coach-head"><h2 id="coachTitle">이렇게 해 보세요</h2><div id="refChips" class="seg" role="tablist" aria-label="비교 대상"></div></div>
       <ol id="actionList" class="action-list"></ol>
       <div id="goodChips" class="good-chips"></div>
+      <button id="imageryBtn" class="imagery-tip" type="button">💭 기준 자세를 보며 머릿속으로 5번 따라 해 보기 <small>심상 연습</small></button>
     </section>
 
     <div id="fusedBlock" hidden>
@@ -185,6 +190,15 @@
 
       <h2>피드백 상세</h2>
       <ul id="feedbackList" class="feedback"></ul>
+      <details id="missedBox" class="missed" hidden>
+        <summary>앱이 놓친 실수 알려 주기 <small id="missedCount" class="muted"></small></summary>
+        <div class="missed-form">
+          <select id="missedSel" aria-label="놓친 실수"></select>
+          <input id="missedRep" type="text" inputmode="numeric" placeholder="몇 회째? (예: 2 4)" aria-label="반복 번호">
+          <input id="missedNote" type="text" placeholder="메모 (선택)" aria-label="메모">
+          <button id="missedSave" class="btn">기록</button>
+        </div>
+      </details>
 
       <div class="side-only">
         <h2>각도 곡선 비교</h2>
@@ -228,7 +242,14 @@
     <div class="card">
       <p><b>데이터</b><br><small>모든 데이터는 이 기기의 브라우저 저장소에만 있어요.</small></p>
       <p id="storageInfo" class="sub"></p>
-      <button id="deleteAll" class="btn danger">모든 기록 삭제</button>
+      <button id="deleteAll" class="btn danger">모든 기록·무게 삭제</button>
+    </div>
+    <div class="card">
+      <p><b>판정 평가 기록</b><br><small>'맞아요 / 틀렸어요'와 놓친 실수를 모은 기록이에요. 영상과 이름은 들어가지 않아요.</small></p>
+      <label class="setting"><span>평가자</span>
+        <select id="setRater"><option value="">선택 안 함</option><option>트레이너</option><option>체대생</option><option>본인</option><option>기타</option></select></label>
+      <p id="labelInfo" class="sub"></p>
+      <button id="exportLabels" class="btn">평가 기록 CSV 내보내기</button>
     </div>
     <div class="card">
       <button id="replayOnboarding" class="btn">촬영 가이드 다시 보기</button>

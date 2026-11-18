@@ -19,6 +19,10 @@ const DO = {
   lockout: '마지막에 엉덩이를 앞으로 밀어 끝까지 펴세요',
   'lean-back': '끝에서 뒤로 젖히지 말고 곧게 서세요',
   squatty: '무릎보다 엉덩이를 뒤로 빼는 느낌으로 숙이세요',
+  'balance-fwd': '발 중앙으로 바닥을 누르며 움직이세요',
+  'balance-back': '뒤꿈치에만 기대지 말고 발 중앙에 체중을 두세요',
+  'dl-bounce': '매 반복 바닥에서 잠깐 멈췄다 당기세요',
+  'dl-back-trend': '지치면 무게나 반복 수를 줄여 등 모양을 유지하세요',
   // 정면
   'knee-cave': '무릎을 발끝 방향으로 밀어 벌리세요',
   'hip-shift': '양발에 체중을 고르게 싣고 앉으세요',
@@ -29,7 +33,7 @@ const DO = {
 };
 
 // 종목별로 문장이 달라야 하는 경우
-const DO_EX = { deadlift: { 'hips-first': '바닥에서 당길 때 가슴과 엉덩이를 같이 올리세요' } };
+const DO_EX = { deadlift: { 'side-lean': '몸통을 가운데로 세운 채 당기세요', 'hip-shift': '양발에 체중을 고르게 싣고 당기세요', 'pelvic-tilt': '골반을 수평으로 유지하며 당기세요' } };
 const doText = (exId, id) => DO_EX[exId]?.[id] || DO[id];
 
 // 잘한 점 → 짧은 칩
@@ -39,17 +43,22 @@ const GOOD = {
   'good-heel': '발바닥 고정',
   'good-core': '코어 안정',
   'good-lockout': '마무리 깔끔',
-  'good-pull': '엉덩이·가슴 같이 올라옴',
+  'good-pull': '바닥에서 멈췄다 당김',
   'good-bias': '엉덩이·무릎 균형',
   'good-knee-track': '무릎 정렬 좋음',
   'good-symmetry': '좌우 균형',
   'good-core-front': '좌우 코어 안정',
   'good-base': '양발 고르게 지탱',
+  'good-balance': '무게중심 발 중앙',
 };
 
 const repsText = (f) => (f.total > 1 && f.reps.length && f.reps.length < f.total ? `${f.reps.join(', ')}회차` : f.total > 1 ? '모든 반복' : '');
 
 export function buildCoaching(result, { max = 3 } = {}) {
+  // 측면 분석인데 정면·대각선으로 찍힌 영상: 자세 지시 대신 다시 찍기를 먼저 안내한다
+  if ((result.warnings || []).some((w) => w.startsWith('정면에 가까운 촬영'))) {
+    return { actions: [{ text: '옆에서 다시 찍으면 정확하게 볼 수 있어요', tag: '카메라를 몸 옆 2~3m, 허리 높이에', kind: 'retake', reps: [], prio: 0 }], good: [] };
+  }
   const actions = [];
   const good = [];
   const used = new Set();

@@ -3,6 +3,7 @@ import { EXERCISES } from './core/exercises.js';
 import { fuse3D } from './core/fuse3d.js';
 import { showFused, hideFused } from './ui/fused.js';
 import { shareResult } from './ui/share.js';
+import { attachJudging, hideJudging, initJudging, loadLabels, clearLabels, labelsCSV } from './ui/judge.js';
 import { analyzeSession } from './core/analyze.js';
 import { analyzeFront } from './core/front.js';
 import { detectView, viewScore } from './core/landmarks.js';
@@ -19,10 +20,11 @@ const $ = (id) => document.getElementById(id);
 const TITLES = { onboarding: '시작하기', home: '폼 체크', capture: '촬영', step: '정면 영상', processing: '분석 중', result: '분석 결과', history: '기록', settings: '설정' };
 const VIEW_KO = { side: '측면', front: '정면' };
 const MODE_HINT = { side: '깊이 · 상체 · 뒤꿈치 · 리듬', front: '무릎 · 좌우 균형 · 체중 분배', both: '영상 2개를 한 번에 골라도 돼요 · 3D' };
-// 데드리프트는 베타: 측면만, 기준값은 논문 근거 없는 초깃값 → 트레이너 피드백용
+// 데드리프트는 베타: 기준 자세 일부만 논문 근거, 나머지는 초깃값 → 트레이너 피드백용
 const VISIBLE_EXERCISES = ['squat', 'deadlift'];
-const SIDE_ONLY = ['deadlift'];
-const BETA = { deadlift: '데드리프트는 베타예요. 기준값이 논문 근거 없이 정한 초깃값이라 참고만 해 주세요.' };
+const SIDE_ONLY = [];
+const BETA = { deadlift: '데드리프트는 베타예요. 기준 자세의 순서·일부 각도만 논문 근거가 있고 나머지는 초깃값이에요. 컨벤셔널 기준이에요.' };
+const MODE_HINT_EX = { deadlift: { side: '마무리 · 바닥 멈춤 · 등 · 3단계 순서', front: '스타일(컨벤셔널/스모) · 좌우 균형', both: '영상 2개를 한 번에 골라도 돼요 · 3D' } };
 
 const settings0 = store.getSettings();
 const state = {
@@ -50,7 +52,7 @@ function show(name, { push = true } = {}) {
   const prev = state.view;
   if (prev === name) return;
   if (prev === 'capture') stopCapture();
-  if (prev === 'result') { disposeResult(); disposeFrontResult(); revokeUrls(); $('viewTabs').hidden = true; }
+  if (prev === 'result') { disposeResult(); disposeFrontResult(); revokeUrls(); $('viewTabs').hidden = true; hideJudging(); }
   if (prev === 'processing') state.cancelled = true;
   if (push && prev && !['processing', 'capture', 'onboarding', 'step'].includes(prev)) state.stack.push(prev);
   if (name === 'home') { state.stack = []; state.pair = null; }
@@ -66,13 +68,16 @@ function back() { show(state.stack.pop() || 'home', { push: false }); }
 
 // ---------- 홈 ----------
 function renderHome() {
+  const st = store.getSettings();
+  $('bodyKg').value = st.bodyKg ?? '';
+  $('barKg').value = st.barKg?.[state.exercise] ?? '';
   const sideOnly = SIDE_ONLY.includes(state.exercise);
   if (sideOnly) state.mode = 'side';
   $('exSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.ex === state.exercise)));
   $('heroTitle').textContent = `${EXERCISES[state.exercise].name} 자세 분석`;
   $('viewMode').querySelectorAll('button').forEach((b) => { b.disabled = sideOnly && b.dataset.mode !== 'side'; });
   $('viewMode').querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === state.mode)));
-  $('viewHint').textContent = sideOnly ? '측면만 · 베타' : MODE_HINT[state.mode];
+  $('viewHint').textContent = sideOnly ? '측면만 · 베타' : (MODE_HINT_EX[state.exercise] || MODE_HINT)[state.mode];
   store.listSessions().then((list) => {
     $('recentBlock').hidden = !list.length;
     $('recentList').innerHTML = list.slice(0, 3).map(sessionItem).join('');
@@ -82,12 +87,27 @@ function renderHome() {
 function goHome() { show('home'); renderHome(); }
 
 
+$('bodyKg').addEventListener('change', (e) => { const v = parseFloat(e.target.value); store.setSetting('bodyKg', v >= 20 && v <= 300 ? v : null); });
+$('barKg').addEventListener('change', (e) => { const v = parseFloat(e.target.value); const all = { ...(store.getSettings().barKg || {}) }; all[state.exercise] = v >= 0 && v <= 600 ? v : null; store.setSetting('barKg', all); });
+
 $('exSeg').addEventListener('click', (e) => {
   const b = e.target.closest('[data-ex]');
   if (!b) return;
   state.exercise = b.dataset.ex;
   store.setSetting('exercise', state.exercise);
   renderHome();
+});
+
+// 심상 연습: 기준 자세를 기준 리듬으로 재생하고 보게 한다.
+// 심상 연습은 실제 운동보다 효과가 작지만 근력 유지·향상에 도움 [논문 41, 42]. 보조 도구로만 안내.
+$('imageryBtn').addEventListener('click', () => {
+  const front = $('view-result').dataset.view === 'front';
+  const box = front ? $('showFrontGhost') : $('showGhost');
+  if (box && !box.checked) { box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); }
+  if (!front && $('ghostMode')) { $('ghostMode').value = 'tempo'; $('ghostMode').dispatchEvent(new Event('change', { bubbles: true })); }
+  $('resultStage').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if ($('playBtn').textContent !== '❚❚') $('playBtn').click();
+  toast('기준 자세를 보며 머릿속으로 같이 움직여 보세요. 실제 운동을 대신하지는 않아요.');
 });
 
 $('shareBtn').addEventListener('click', async () => {
@@ -148,14 +168,16 @@ $('stepSkipBtn').addEventListener('click', () => {
 
 $('demoBtn').addEventListener('click', () => {
   const ex = state.exercise;
-  const side = state.mode !== 'front' ? analyzeSession(generateDemo(ex), ex, refOpt(ex)) : null;
+  const side = state.mode !== 'front' ? analyzeSession(generateDemo(ex), ex, { referenceId: refOpt(ex).referenceId }) : null;
   const front = state.mode !== 'side' ? analyzeFront(generateFrontDemo(), ex) : null;
   show('result');
   if (side && front) showCombined({ side, front }, { demo: true });
   else showSingle(side ? 'side' : 'front', side || front, { demo: true });
 });
 
-const refOpt = (ex) => ({ referenceId: store.getSettings().references?.[ex] });
+// 무게 입력(선택): 몸무게는 기억, 바벨 무게는 종목별로 마지막 값 기억. 기기 밖으로 보내지 않음
+const curLoad = () => ({ bodyKg: parseFloat($('bodyKg').value), barKg: parseFloat($('barKg').value) || 0 });
+const refOpt = (ex) => ({ referenceId: store.getSettings().references?.[ex], load: curLoad() });
 
 // ---------- 분석 ----------
 // view: 'side' | 'front' | 'auto'(영상을 보고 판정). label: 진행 표시 앞머리
@@ -264,6 +286,7 @@ function showSingle(view, result, { videoUrl = null, blob = null, demo = false, 
   };
   if (view === 'front') { disposeResult(); showFrontResult(result, opts); } else showResult(result, opts);
   if (BETA[result.exercise]) $('resultBanner').insertAdjacentHTML('afterbegin', `<div class="banner info">${BETA[result.exercise]}</div>`);
+  attachJudging(result, view);
 }
 
 function showCombined(pair, { demo = false, saved = false } = {}) {
@@ -284,6 +307,8 @@ function showCombined(pair, { demo = false, saved = false } = {}) {
     const mismatch = compareViews(pair.side, pair.front);
     if (mismatch.length) $('resultBanner').insertAdjacentHTML('afterbegin', `<div class="banner warn"><b>측면·정면 영상이 서로 달라 보여요</b><br>${mismatch.join('<br>')}</div>`);
     showFused(fz);
+    attachJudging(view === 'front' ? pair.front : pair.side, view);
+    if (BETA[pair.side.exercise]) $('resultBanner').insertAdjacentHTML('afterbegin', `<div class="banner info">${BETA[pair.side.exercise]}</div>`);
     if (rep) setTimeout(() => document.querySelector(`#repChips [data-rep="${rep}"]`)?.click(), 0);
   };
   tabs.onclick = (e) => { const b = e.target.closest('[data-tab]'); if (b) render(b.dataset.tab); };
@@ -298,6 +323,7 @@ async function persist({ side = null, front = null, sideBlob = null, frontBlob =
     date: new Date().toISOString(),
     exercise: (side || front).exercise,
     mode: side && front ? 'both' : side ? 'side' : 'front',
+    load: side?.load || null,
     summary: side ? side.summary : null,
     frontSummary: front ? front.summary : null,
     topIssue: coach.actions[0]?.text || null,
@@ -358,17 +384,33 @@ async function openSettings() {
   $('setSaveVideo').checked = store.getSettings().saveVideo;
   const used = await store.storageEstimate();
   const n = (await store.listSessions().catch(() => [])).length;
+  $('setRater').value = store.getSettings().rater || '';
+  const labels = loadLabels();
+  $('labelInfo').textContent = labels.length ? `평가 ${labels.length}개 (틀렸어요 ${labels.filter((x) => x.verdict === 'wrong').length} · 놓친 실수 ${labels.filter((x) => x.verdict === 'missed').length})` : '아직 평가 기록이 없어요.';
   $('storageInfo').textContent = `저장된 기록 ${n}개${used != null ? ` · 사용 중 약 ${(used / 1e6).toFixed(1)}MB` : ''}`;
 }
 $('settingsBtn').addEventListener('click', openSettings);
 $('setSaveVideo').addEventListener('change', (e) => store.setSetting('saveVideo', e.target.checked));
 $('deleteAll').addEventListener('click', async () => {
-  if (!confirm('저장된 모든 기록과 영상을 삭제할까요? 되돌릴 수 없어요.')) return;
+  if (!confirm('저장된 모든 기록과 영상, 입력한 몸무게·바벨 무게, 판정 평가 기록을 삭제할까요? 되돌릴 수 없어요.')) return;
   await store.clearSessions();
+  store.setSetting('bodyKg', null);
+  store.setSetting('barKg', {});
+  clearLabels();
   toast('모든 기록을 삭제했어요.');
   openSettings();
 });
 $('replayOnboarding').addEventListener('click', () => show('onboarding'));
+$('setRater').addEventListener('change', (e) => store.setSetting('rater', e.target.value));
+$('exportLabels').addEventListener('click', () => {
+  if (!loadLabels().length) { toast('아직 평가 기록이 없어요.'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([labelsCSV()], { type: 'text/csv' }));
+  a.download = `formcheck-labels-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+initJudging(toast);
 
 // ---------- 공통 ----------
 $('backBtn').addEventListener('click', () => {

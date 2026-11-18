@@ -485,3 +485,25 @@ export function muscleSVG(muscles) {
     <text x="180" y="234" text-anchor="middle" class="svg-label">뒤</text>
   </svg>`;
 }
+
+// ---- 측면: 무게중심(앞뒤) 표시 — 서 있을 때 위치를 발 중앙(0.5)에 두고 이동만큼 옮긴 위치. 추정값 ----
+export function drawBalance(ctx, lm, side, b, W, H) {
+  if (!lm || !isNum(b)) return;
+  const K = SIDES[side];
+  const h = lm[K.heel], f = lm[K.foot];
+  if (!h || !f || h.v < VIS_MIN || f.v < VIS_MIN) return;
+  const scale = Math.max(W, H) / 1000;
+  const heel = { x: h.x * W, y: h.y * H }, toe = { x: f.x * W, y: f.y * H };
+  const bb = Math.max(-0.2, Math.min(1.2, b));
+  const x = heel.x + (toe.x - heel.x) * bb;
+  const y = Math.max(heel.y, toe.y) + 34 * scale;
+  const ok = b >= 0.25 && b <= 0.75;
+  const color = ok ? '#22c55e' : '#f59e0b';
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(x, y - 12 * scale); ctx.lineTo(x - 9 * scale, y + 4 * scale); ctx.lineTo(x + 9 * scale, y + 4 * scale); ctx.closePath(); ctx.fill();
+  ctx.font = `700 ${Math.round(13 * scale)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  ctx.fillText(ok ? '무게중심' : b > 0.75 ? '무게중심 앞쪽' : '무게중심 뒤쪽', x, y + 7 * scale);
+  ctx.restore();
+}

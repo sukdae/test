@@ -1,0 +1,14 @@
+# 테스트용 영상은 절대 올리지 않음 (저작권·초상권)
+.local-test/
+*.mp4
+*.mov
+*.webm
+*.m4v
+*.avi
+# 내보낸 분석 데이터
+*.csv
+# OS·에디터
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

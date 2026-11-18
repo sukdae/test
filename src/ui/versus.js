@@ -52,7 +52,7 @@ export function renderVersus(el, result, profile) {
       <thead><tr><th></th><th>나</th><th>${esc(label)}</th><th>차이</th></tr></thead>
       <tbody>${rows.join('')}</tbody>
     </table>
-    ${hasTempo ? rhythmBars(mt, rt, label) + rhythmAdvice(mt, rt, label) : '<p class="sub">이 기준에는 리듬 데이터가 없어요. 영상에서 추출한 기준(예: 스쿼트의 논문 기반 기준 자세)을 고르면 리듬도 비교해요.</p>'}`;
+    ${hasTempo ? rhythmBars(mt, rt, label) + rhythmAdvice(mt, rt, label) : '<p class="sub">이 기준에는 리듬 데이터가 없어요(확인한 논문에 템포 수치 없음).</p>'}`;
 }
 
 function rhythmBars(mt, rt, label) {

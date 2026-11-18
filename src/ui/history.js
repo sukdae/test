@@ -22,7 +22,7 @@ export function sessionItem(s) {
   <div class="session" data-id="${esc(s.id)}">
     <button class="session-main" data-open="${esc(s.id)}">
       <b>${esc(ex?.name ?? s.exercise)} · ${m.reps ?? fm?.reps ?? 0}회 <span class="tag">${modeKo}</span></b>
-      <small>${fmtDate(s.date)} · ${key}${s.video ? ' · 🎞' : ''}</small>
+      <small>${fmtDate(s.date)} · ${key}${s.load?.barKg > 0 ? ` · ${s.load.barKg}kg` : ''}${s.video ? ' · 🎞' : ''}</small>
       ${s.topIssue ? `<small class="issue">⚠︎ ${esc(s.topIssue)}</small>` : '<small class="ok-text">✓ 큰 문제 없음</small>'}
     </button>
     <button class="icon-btn del" data-del="${esc(s.id)}" aria-label="삭제">🗑</button>

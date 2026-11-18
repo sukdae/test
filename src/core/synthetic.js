@@ -10,7 +10,7 @@ import { BACK_LEVELS } from './back.js';
 
 export const DEMO_REPS = {
   squat: [{}, {}, { depth: 0.55 }, { lean: 1.5, hipsFirst: true, round: true }, { heel: true }],
-  deadlift: [{}, {}, { hipsFirst: true, round: true }, { endTrunk: 14 }, { endTrunk: -16 }],
+  deadlift: [{}, {}, { hipsFirst: true, round: true }, { endTrunk: 14 }, { endTrunk: -24 }],
 };
 
 function mulberry32(a) {

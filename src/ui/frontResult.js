@@ -1,6 +1,6 @@
 // 정면 분석 결과 화면 (측면 결과 화면과 같은 영역을 같이 씁니다)
 import { FRONT_THRESHOLDS, compareFrontIdeal } from '../core/front.js';
-import { IDEAL_SQUAT_FRONT } from '../core/exercises.js';
+import { idealFront } from '../core/exercises.js';
 import { estimateFrontMuscles, levelOf } from '../core/muscles.js';
 import { buildCoaching } from '../core/coach.js';
 import { isNum } from '../core/signal.js';
@@ -103,13 +103,13 @@ export function showFrontResult(fr, opts = {}) {
 
   // 나 vs 기준 (논문 기반 정면 기준 자세)
   const vsFmt = { stance: (x) => `${Math.round(x * 100)}%`, knee: (x) => `${x > 0 ? '안쪽 ' : ''}${Math.round(Math.abs(x) * 100)}%`, tilt: (x) => `${x.toFixed(0)}°`, shift: (x) => `${Math.round(x * 100)}%`, lean: (x) => `${x.toFixed(0)}°`, weight: (x) => `${Math.round(x)} : ${Math.round(100 - x)}` };
-  const vsRows = compareFrontIdeal(fr, IDEAL_SQUAT_FRONT);
+  const vsRows = compareFrontIdeal(fr, idealFront(fr.exercise));
   $('frontVsTable').innerHTML = `
     <table class="vs">
-      <thead><tr><th></th><th>나</th><th>${esc(IDEAL_SQUAT_FRONT.short)}</th><th></th></tr></thead>
+      <thead><tr><th></th><th>나</th><th>${esc(idealFront(fr.exercise).short)}</th><th></th></tr></thead>
       <tbody>${vsRows.map((r) => `<tr><th>${r.label}</th><td>${isNum(r.me) ? vsFmt[r.key](r.me) : '–'}</td><td>${esc(r.refText)}</td><td class="diff ${r.ok === null ? '' : r.ok ? 'same' : 'off'}">${r.ok === null ? '' : r.ok ? '✓' : '⚠︎'}</td></tr>`).join('')}</tbody>
     </table>
-    <p class="sub">근거: Straub & Powers 2024 · 좌우 대칭은 초깃값</p>`;
+    <p class="sub">근거: ${fr.exercise === 'deadlift' ? 'Kompf & Arandjelović 2017 · 나머지는 초깃값' : 'Straub & Powers 2024 · 좌우 대칭은 초깃값'}</p>`;
 
   // 피드백 상세
   const ICON = { warn: '⚠︎', info: 'ℹ︎', good: '✓' };

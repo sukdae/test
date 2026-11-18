@@ -7,6 +7,7 @@ export const SIDES = {
 };
 
 export const CORE_KEYS = ['shoulder', 'hip', 'knee', 'ankle'];
+// 관절 신뢰도 0.5 미만은 버린다. 품질 필터가 정확도를 크게 좌우함 [논문 28]
 export const VIS_MIN = 0.5;
 
 // 화면에 그릴 뼈대 연결
@@ -79,3 +80,56 @@ export function viewScore({ frames, width: W, height: H }) {
   return median(r);
 }
 export const detectView = (data) => { const s = viewScore(data); return isNum(s) && s >= VIEW_SPLIT ? 'front' : 'side'; };
+
+// 프레임마다 보이는 쪽(왼/오른)과 진행 방향을 정한다. 편집 영상처럼 중간에 사람이 반대로 서는 경우를 처리하기 위함.
+// (실제 영상: 두 장면이 서로 반대 방향이라 영상 전체를 한 방향으로 계산하면 앞 장면이 통째로 버려졌음)
+// 1) 진행 방향(발끝 쪽, 없으면 얼굴 쪽)을 약 2초 창 다수결로 정하고 3초보다 짧은 구간은 앞뒤 구간에 합친다
+//    (가려짐 때문에 잠깐 뒤집히는 것 무시). 2) 구간마다 관절이 더 잘 보이는 쪽을 고른다.
+// 반환: { sides[], facings[], switches, side, facing }
+export function frameSides(frames, { win = 31, minRun = 3 } = {}) {
+  const n = frames.length;
+  const rawFace = new Array(n).fill(0), visL = new Array(n).fill(0), visR = new Array(n).fill(0);
+  frames.forEach((f, i) => {
+    const lm = f.lm;
+    if (!lm) return;
+    for (const k of CORE_KEYS) { visL[i] += visOf(lm[SIDES.left[k]]); visR[i] += visOf(lm[SIDES.right[k]]); }
+    const K = SIDES[visL[i] >= visR[i] ? 'left' : 'right'];
+    const h = lm[K.heel], ft = lm[K.foot], no = lm[K.nose], ea = lm[K.ear];
+    if (visOf(h) >= VIS_MIN && visOf(ft) >= VIS_MIN && Math.abs(ft.x - h.x) > 0.003) rawFace[i] = Math.sign(ft.x - h.x);
+    else if (visOf(no) >= VIS_MIN && visOf(ea) >= VIS_MIN && Math.abs(no.x - ea.x) > 0.002) rawFace[i] = Math.sign(no.x - ea.x);
+  });
+  const sum = rawFace.reduce((a, b) => a + b, 0);
+  const gFace = sum >= 0 ? 1 : -1, gSide = chooseSide(frames);
+  // 1) 창 다수결
+  const hw = Math.floor(win / 2);
+  const facings = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let f = 0;
+    for (let j = Math.max(0, i - hw); j <= Math.min(n - 1, i + hw); j++) f += rawFace[j];
+    facings[i] = f === 0 ? (i ? facings[i - 1] : gFace) : f > 0 ? 1 : -1;
+  }
+  // 짧은 구간 합치기
+  const t = frames.map((f) => f.t);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const runs = [];
+    for (let i = 0; i < n; ) { let j = i; while (j + 1 < n && facings[j + 1] === facings[i]) j++; runs.push([i, j]); i = j + 1; }
+    if (runs.length < 2) break;
+    for (const [a, b] of runs) {
+      if (t[b] - t[a] < minRun) { const v = a > 0 ? facings[a - 1] : facings[b + 1]; for (let k = a; k <= b; k++) facings[k] = v; changed = true; break; }
+    }
+  }
+  // 2) 구간마다 잘 보이는 쪽
+  const sides = new Array(n);
+  for (let i = 0; i < n; ) {
+    let j = i; while (j + 1 < n && facings[j + 1] === facings[i]) j++;
+    let L = 0, R = 0; for (let k = i; k <= j; k++) { L += visL[k]; R += visR[k]; }
+    const sd = L >= R ? 'left' : 'right';
+    for (let k = i; k <= j; k++) sides[k] = sd;
+    i = j + 1;
+  }
+  let switches = 0;
+  for (let i = 1; i < n; i++) if (facings[i] !== facings[i - 1]) switches++;
+  return { sides, facings, switches, side: gSide, facing: gFace };
+}

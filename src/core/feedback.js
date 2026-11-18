@@ -16,12 +16,20 @@ export const REFS = {
   mckean: 'McKean 외 (2010)',
   wilk: 'Wilk 외 (2021)',
   fry: 'Fry 외 (2003)',
+  ghasemi: 'Ghasemi 외 (2026)',
+  biscarini: 'Biscarini 외 (2013)',
+  chenCom: 'Chen 외 (2025)',
+  kompf: 'Kompf & Arandjelović (2017)',
+  krajewski: 'Krajewski 외 (2019)',
+  ramirez: 'Ramirez 외 (2024)',
+  cherni: 'Cherni 외 (2026)',
 };
 
 export const THRESHOLDS = {
   squat: {
     // 깊이 목표 = 평행(허벅지가 바닥과 수평). [논문 1] 건강한 무릎에는 딥보다 평행 스쿼트를 권함.
-    // 15°는 측정 오차(2D 추정)를 감안한 여유 [초깃값], 35°는 '얕음' 경계 [초깃값].
+    // 15°는 측정 오차(2D 추정)를 감안한 여유 [초깃값]. 2D는 3D보다 엉덩이·허벅지 각도가 3–13° 작게 나옴 [논문 33]
+    // 35°는 '얕음' 경계 [초깃값].
     nearThigh: 15,
     shallowThigh: 35,
     // 상체–정강이 각도 차이 ±10° → 엉덩이 위주 / 중립 / 무릎 위주. [논문 3] 경고가 아닌 정보.
@@ -35,15 +43,41 @@ export const THRESHOLDS = {
     // 반복 간 깊이 편차 [초깃값]
     depthStd: 8,
   },
-  // 데드리프트 기준은 확인한 논문 목록(스쿼트)에 근거가 없음 [초깃값]
-  deadlift: { lockoutHip: 165, leanBackTrunk: -10, hipsFirst: 10, squattyKnee: 100 },
+  deadlift: {
+    // 마무리·젖힘·무릎 굽힘 기준은 확인한 논문에 수치가 없음 [초깃값]
+    // 뒤로 젖힘 −15°: 처음엔 −10°였으나 실제 측면 영상에서 정상으로 보이는 마무리가 −10~−11°로 나와 경계에 걸림.
+    //   2D 각도 오차(3–13°) [논문 33]를 감안해 넓힘 [초깃값]
+    lockoutHip: 165, leanBackTrunk: -15, squattyKnee: 100,
+    // '엉덩이가 먼저 올라옴' 경고는 쓰지 않음: 데드리프트는 원래 무릎 → 엉덩이 순서로 펴지는 동작 [논문 15, 22]
+    // 바닥에서 튕김: 튕기면 당기기 초반에 힘을 기르기 어렵다 [논문 20]. 0.15초 기준은 [초깃값]
+    bounce: 0.15,
+    // 반복이 진행될수록 등 굽힘 증가: 피로하면 몸통 굽힘이 커짐 [논문 25]. 결론이 갈려 참고로만 [논문 19, 24]
+    // 4%p는 등 곡률 기준(core.backRound)과 같은 [초깃값]
+    backTrend: 4,
+  },
   // 등 곡률·흔들림 [초깃값 · 실험]. 무게를 지면 허리가 어느 정도 굽는 것은 정상일 수 있어 [논문 10]
   // 단정하지 않고 '참고'로만 표시.
   core: { backRound: 4, backArch: -4, wobble: 2.5 },
+  // 무게중심 앞뒤 이동: 최저점에서 서 있을 때보다 발 길이의 몇 %만큼 움직였는지.
+  // 발 앞·뒤 체중 분배가 관절 부하를 바꿈 [논문 45, 46]. ±25%는 논문에 수치가 없어 [초깃값]
+  balance: 0.25,
 };
 
 const C = THRESHOLDS.core;
+const BAL = THRESHOLDS.balance;
 const CORE_RULES = [
+  {
+    id: 'balance-fwd', level: 'info', group: 'balance', ref: `${REFS.biscarini}, ${REFS.chenCom}`,
+    when: (m) => m.comShift > BAL,
+    title: '앉을수록 무게중심이 앞으로 쏠려요 (추정)',
+    detail: (hit) => `최저점에서 무게중심이 서 있을 때보다 발 길이의 ${Math.round(avgOf(hit, 'comShift') * 100)}%만큼 앞으로 옮겨 가요. 발 앞·뒤 체중 분배에 따라 무릎·엉덩이 부하가 달라진다는 연구가 있어요. 관절 위치로 계산한 추정값이에요.${hit[0]?.metrics.withBar ? ' 입력한 바벨 무게를 포함했어요.' : ' 바벨 무게를 입력하면 바벨까지 포함해 계산해요.'}`,
+  },
+  {
+    id: 'balance-back', level: 'info', group: 'balance', ref: `${REFS.biscarini}, ${REFS.chenCom}`,
+    when: (m) => m.comShift < -BAL,
+    title: '앉을수록 무게중심이 뒤로 쏠려요 (추정)',
+    detail: (hit) => `최저점에서 무게중심이 서 있을 때보다 발 길이의 ${Math.round(-avgOf(hit, 'comShift') * 100)}%만큼 뒤로 옮겨 가요. 뒤로 쏠리면 균형을 잡으려 상체가 더 숙여질 수 있어요. 관절 위치로 계산한 추정값이에요.${hit[0]?.metrics.withBar ? ' 입력한 바벨 무게를 포함했어요.' : ' 바벨 무게를 입력하면 바벨까지 포함해 계산해요.'}`,
+  },
   {
     id: 'back-round', level: 'info', group: 'core', ref: `${REFS.mckean}, ${REFS.straub}`,
     when: (m) => m.backRound > C.backRound,
@@ -67,10 +101,11 @@ const CORE_RULES = [
 const RULES = {
   squat: (T) => [
     {
-      id: 'depth-shallow', level: 'warn', group: 'depth', ref: REFS.escamilla,
+      id: 'depth-shallow', level: 'warn', group: 'depth', ref: `${REFS.escamilla}, ${REFS.ghasemi}`,
       when: (m) => m.thighAboveParallel > T.shallowThigh,
       title: '깊이가 얕아요',
-      detail: (hit) => `최저점에서 허벅지가 수평보다 평균 ${deg(avgOf(hit, 'thighAboveParallel'))} 위에 있어요. 허벅지가 바닥과 평행해질 때까지 앉는 것을 목표로 해 보세요.`,
+      // 뒤꿈치 받침은 발목·무릎 가동범위를 늘림(발목은 2.5 cm 이상에서) [논문 36]. 깊이는 무릎 가동범위가 가장 큰 요인 [논문 38]
+      detail: (hit) => `최저점에서 허벅지가 수평보다 평균 ${deg(avgOf(hit, 'thighAboveParallel'))} 위에 있어요. 허벅지가 바닥과 평행해질 때까지 앉는 것을 목표로 해 보세요. 발목이 뻣뻣해 깊이 앉기 어렵다면 뒤꿈치 받침(약 2.5 cm 이상)이 발목·무릎 가동범위를 늘린다는 연구가 있어요.`,
     },
     {
       id: 'depth-near', level: 'info', group: 'depth', ref: REFS.escamilla,
@@ -111,16 +146,16 @@ const RULES = {
       detail: (hit) => `상체가 수직보다 평균 ${deg(-avgOf(hit, 'minTrunk'))} 뒤로 넘어가요. 엉덩이를 조여 곧게 서는 정도로 마무리하세요.`,
     },
     {
-      id: 'hips-first', level: 'warn', group: 'pull',
-      when: (m) => m.kneeEarly - m.trunkDrop > T.hipsFirst,
-      title: '바닥에서 엉덩이가 먼저 올라와요',
-      detail: () => '당기기 초반에 무릎만 먼저 펴지고 상체 각도는 그대로예요. 다리로 바닥을 밀어내며 가슴과 엉덩이가 함께 올라오게 해 보세요.',
+      id: 'dl-bounce', level: 'info', group: 'pull', ref: REFS.krajewski,
+      when: (m) => m.floorPause < T.bounce,
+      title: '바닥에서 튕기듯 이어서 당겨요 (참고)',
+      detail: () => '바닥에서 멈추지 않고 바로 이어서 당겼어요. 튕기면 당기기 초반에 힘을 기르기 어렵다는 연구가 있어요. 매 반복 바닥에서 잠깐 멈췄다 당겨 보세요.',
     },
     {
       id: 'squatty', level: 'info', group: 'pull',
-      when: (m) => m.minKnee < T.squattyKnee,
+      when: (m) => (isNum(m.kneeAtBottom) ? m.kneeAtBottom : m.minKnee) < T.squattyKnee,
       title: '무릎을 많이 굽혀요',
-      detail: (hit) => `최저점 무릎 각도 평균 ${deg(avgOf(hit, 'minKnee'))}. 스쿼트처럼 당기고 있을 수 있어요. 엉덩이를 뒤로 빼는 힌지 동작을 의식해 보세요.`,
+      detail: (hit) => `바닥 근처 무릎 각도 평균 ${deg(avgOf(hit, (m) => (isNum(m.kneeAtBottom) ? m.kneeAtBottom : m.minKnee)))}. 스쿼트처럼 당기고 있을 수 있어요. 엉덩이를 뒤로 빼는 힌지 동작을 의식해 보세요.`,
     },
   ],
 };
@@ -133,7 +168,7 @@ const GOOD = {
   ],
   deadlift: [
     { group: 'lockout', title: '마무리 자세가 깔끔해요' },
-    { group: 'pull', title: '가슴과 엉덩이가 함께 올라와요' },
+    { group: 'pull', title: '바닥에서 멈췄다 당겨요', ok: (reps) => reps.some((r) => isNum(r.metrics.floorPause)) },
   ],
 };
 
@@ -160,12 +195,17 @@ export function trunkTibiaBias(reps) {
   };
 }
 
-export function evaluateFeedback(exId, reps) {
+export function evaluateFeedback(exId, reps, { load = null } = {}) {
+  // 데드리프트 무게중심은 바벨 무게를 입력했을 때만 판정 (몸만의 무게중심은 바벨 때문에 뒤로 가는 게 정상)
+  const dlBalance = exId === 'deadlift' && load?.barKg > 0;
   if (!reps.length) return [];
   const T = THRESHOLDS[exId];
   const items = [];
   const firedGroups = new Set();
-  for (const rule of [...RULES[exId](T), ...CORE_RULES]) {
+  // 데드리프트는 등 곡률을 반복별 단정 대신 '반복할수록 커지는지'로만 본다 [논문 24, 25]
+  // 무게중심(앞뒤)도 쓰지 않는다: 몸만의 무게중심은 바벨 무게와 균형을 맞추려 뒤로 가는 게 정상인데 바벨 무게를 모름
+  const core = exId === 'deadlift' ? CORE_RULES.filter((r) => r.id === 'trunk-wobble' || (dlBalance && r.id.startsWith('balance'))) : CORE_RULES;
+  for (const rule of [...RULES[exId](T), ...core]) {
     const hit = reps.filter((r) => { try { return rule.when(r.metrics) === true; } catch { return false; } });
     if (!hit.length) continue;
     firedGroups.add(rule.group);
@@ -187,11 +227,24 @@ export function evaluateFeedback(exId, reps) {
     }
   }
   const hasBack = reps.some((r) => isNum(r.metrics.backRound));
+  if (exId === 'deadlift' && hasBack) {
+    const full = reps.filter((r) => isNum(r.metrics.backRound));
+    if (full.length >= 3) {
+      const first = full[0].metrics.backRound, last = full.at(-1).metrics.backRound;
+      if (last - first > T.backTrend) {
+        items.push({ id: 'dl-back-trend', level: 'info', group: 'core', title: '반복할수록 등이 더 굽어요 (참고)', ref: `${REFS.ramirez}, ${REFS.cherni}`,
+          detail: `첫 반복보다 마지막 반복에서 등 윤곽이 ${(last - first).toFixed(1)}%p 더 둥글어요(실험 기능). 지치면 몸통 굽힘이 커진다는 연구가 있어요. 적당한 굽힘 자체가 문제인지는 연구 결론이 갈려요. 무게나 반복 수를 조절해 보세요.`,
+          reps: [full.at(-1).index], count: 1, total: reps.length });
+        firedGroups.add('core');
+      }
+    }
+  }
   if (exId === 'deadlift' && !hasBack) {
     items.push({ id: 'spine-note', level: 'info', title: '허리 굽음은 분석하지 않아요', detail: '관절 33점에는 척추 중간 지점이 없어 허리가 말리는지는 판단할 수 없어요. 거울이나 영상으로 직접 확인하세요.', ref: null, reps: [], count: 0, total: reps.length });
   }
 
-  const goods = [...GOOD[exId], { group: 'core', title: '코어가 안정적이에요', detail: '등 윤곽이 서 있을 때와 비슷하게 유지되고 상체 흔들림도 적어요.', ok: () => hasBack }];
+  const goods = [...GOOD[exId], { group: 'core', title: '코어가 안정적이에요', detail: '등 윤곽이 서 있을 때와 비슷하게 유지되고 상체 흔들림도 적어요.', ok: () => hasBack },
+    { group: 'balance', title: '무게중심이 발 중앙에 있어요', detail: '최저점에서도 무게중심(추정)이 서 있을 때 위치에서 발 길이의 ±25% 안에 있어요.', ok: (rs) => (exId !== 'deadlift' || dlBalance) && rs.some((r) => isNum(r.metrics.comShift)) }];
   for (const g of goods) {
     if (firedGroups.has(g.group)) continue;
     if (g.ok && !g.ok(reps)) continue;

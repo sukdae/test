@@ -22,6 +22,7 @@ export function loadPose() {
       baseOptions: { modelAssetPath: MODEL, delegate },
       runningMode: 'VIDEO',
       numPoses: 1,
+      // 인식 신뢰도가 낮은 프레임을 거르지 않으면 무릎 각도 오차가 크게 늘어남(ICC 0.77 → 0.43) [논문 28]
       minPoseDetectionConfidence: 0.5,
       minPosePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,

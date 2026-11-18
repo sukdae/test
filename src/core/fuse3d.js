@@ -177,7 +177,7 @@ export function fuse3D(side, front) {
     warnings.push('측면·정면 깊이가 많이 달라요. 같은 세트인지 확인해 주세요.');
   }
   if (sr.length !== fr.length) warnings.push(`반복 수가 달라서(측면 ${sr.length} · 정면 ${fr.length}) 앞 ${reps.length}회만 짝지었어요.`);
-  return { poses, metrics, reps, warnings };
+  return { exercise: side.exercise || 'squat', poses, metrics, reps, warnings };
 }
 
 // 3D 진단표 행 (짧게). m = 지표, repsList = 반복별 결과(전체 보기일 때 '몇 회'를 붙임)

@@ -8,6 +8,7 @@ import { segmentReps } from './reps.js';
 import { bottomPause, cleanReps } from './reference.js';
 import { dist, DEG } from './geometry.js';
 import { visOf } from './landmarks.js';
+import { idealFront } from './exercises.js';
 
 const L = { shoulder: 11, hip: 23, knee: 25, ankle: 27, heel: 29, foot: 31 };
 const R = { shoulder: 12, hip: 24, knee: 26, ankle: 28, heel: 30, foot: 32 };
@@ -154,9 +155,11 @@ export function analyzeFront({ frames, width: W, height: H }, exId) {
   // 스탠스 너비 (어깨 관절 간격 대비) — 서 있을 때 기준
   const stanceRatio = median(stanceW) / (median(shoulderW) || NaN);
   const T = FRONT_THRESHOLDS.stance;
-  const stance = isNum(stanceRatio)
-    ? { ratio: stanceRatio, category: stanceRatio < T.narrow ? '좁음' : stanceRatio <= T.wide ? '중간' : '넓음' }
-    : null;
+  const D = idealFront('deadlift');
+  const stance = !isNum(stanceRatio) ? null
+    : exId === 'deadlift'
+      ? { ratio: stanceRatio, category: stanceRatio >= D.sumoFrom ? '스모' : stanceRatio > D.stance.max ? '넓은 컨벤셔널' : stanceRatio < D.stance.min ? '좁음' : '컨벤셔널' }
+      : { ratio: stanceRatio, category: stanceRatio < T.narrow ? '좁음' : stanceRatio <= T.wide ? '중간' : '넓음' };
 
   const warnings = [];
   if (!valid) warnings.push('양쪽 다리를 인식하지 못했어요. 정면에서 전신이 보이게 찍어 주세요.');
@@ -183,7 +186,7 @@ export function analyzeFront({ frames, width: W, height: H }, exId) {
   return {
     version: 1, view: 'front', exercise: exId, width: W, height: H, fps, duration, coverage,
     t, series: s, frames, legLen, reps, stance, tempo, summary, warnings,
-    feedback: frontFeedback(reps, stance),
+    feedback: frontFeedback(reps, stance, exId),
   };
 }
 
@@ -193,7 +196,7 @@ export const weightLeftPct = (shift) => (isNum(shift) ? Math.max(0, Math.min(100
 const ftxt = (v) => `${Math.round(v * 100)}%`;
 const sideName = (v) => (v > 0 ? '왼쪽' : '오른쪽');
 
-export function frontFeedback(reps, stance) {
+export function frontFeedback(reps, stance, exId = 'squat') {
   const T = FRONT_THRESHOLDS;
   const items = [];
   if (!reps.length) return items;
@@ -204,8 +207,9 @@ export function frontFeedback(reps, stance) {
   if (cave.length) {
     const inL = mean(cave.map((r) => r.metrics.kneeInL)), inR = mean(cave.map((r) => r.metrics.kneeInR));
     const which = inL > T.kneeInward && inR > T.kneeInward ? '양쪽 무릎' : inL >= inR ? '왼쪽 무릎' : '오른쪽 무릎';
-    add('knee-cave', 'warn', `${which}이 안쪽으로 모여요`,
-      `최저점에서 무릎이 엉덩이–발목을 잇는 선보다 안쪽으로 들어가요(다리 길이의 ${ftxt(Math.max(inL, inR))}). 무릎이 발끝과 같은 방향을 향하도록 바깥으로 밀어 주세요.`, cave);
+    // 경고가 아닌 참고: 2D 정면 무릎 측정은 3D와 상관이 낮다(r = 0.20) [논문 29]. 2D 방법끼리는 잘 맞음 [논문 30]
+    add('knee-cave', 'info', `${which}이 안쪽으로 모여 보여요 (2D 추정)`,
+      `최저점에서 무릎이 엉덩이–발목을 잇는 선보다 안쪽으로 들어가 보여요(다리 길이의 ${ftxt(Math.max(inL, inR))}). 정면 2D 영상의 무릎 측정은 실제 3D 움직임과 차이가 클 수 있어 참고로만 봐 주세요. 무릎이 발끝과 같은 방향을 향하게 해 보세요.`, cave, 'Haberkamp 외 (2022), Janisch 외 (2026)');
   }
   const shift = reps.filter((r) => Math.abs(r.metrics.shift) > T.hipShift);
   if (shift.length) {
@@ -232,7 +236,12 @@ export function frontFeedback(reps, stance) {
     const hit = [...new Set([...liftL, ...liftR])].sort((a, b) => a.index - b.index);
     add('foot-lift', 'warn', `${which}이 바닥에서 떠요`, '앉거나 일어날 때 한쪽 발이 다른 발보다 올라가요. 양발 전체로 바닥을 누른 채 움직여 보세요. (양발 뒤꿈치 들림은 측면 분석에서 확인해요.)', hit);
   }
-  if (stance) {
+  if (stance && exId === 'deadlift') {
+    const pct = Math.round(stance.ratio * 100);
+    const ref = 'Kompf & Arandjelović (2017), Escamilla 외 (2000)';
+    if (stance.category === '스모') add('dl-sumo', 'info', '스모 스타일로 보여요', `발 간격이 어깨 관절 간격의 약 ${pct}%예요. 스모는 컨벤셔널보다 2–3배 넓은 스탠스를 써요. 측면 판정은 아직 컨벤셔널 기준이라 참고만 해 주세요.`, [], ref);
+    else add('stance', 'good', `스탠스 ${stance.category} (어깨 대비 약 ${pct}%)`, '컨벤셔널은 대략 어깨너비, 스모는 2–3배 넓어요. 어깨 관절 위치로 잰 추정값이에요.', [], ref);
+  } else if (stance) {
     const pct = Math.round(stance.ratio * 100);
     if (stance.category === '넓음') add('stance-wide', 'info', '스탠스가 넓어요', `발 간격이 어깨 관절 간격의 약 ${pct}%예요(넓음: 150% 초과). 넓은 스탠스는 무릎 외반 모멘트를 높일 수 있다는 보고가 있어요. 어깨 관절 위치로 잰 추정값이라 실제보다 넓게 나올 수 있어요.`, [], 'Straub & Powers (2024)');
     else add('stance', 'good', `스탠스 ${stance.category} (어깨 대비 약 ${pct}%)`, '좁음 75–100%, 중간 100–150%, 넓음 150–200% 기준이에요. 어깨 관절 위치로 잰 추정값이에요.', [], 'Straub & Powers (2024)');
