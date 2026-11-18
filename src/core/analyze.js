@@ -47,6 +47,10 @@ export function cleanLoad(load) {
   return bodyKg ? { bodyKg, barKg: barKg ?? 0 } : null;
 }
 
+// 정상 프레임으로 볼 정강이 길이 범위 (전체 중앙값 대비) [초깃값]
+export const SHIN_OK = [0.7, 1.4];
+const SHIN_NEAR = 0.1;
+
 export function analyzeSession({ frames, width, height }, exId, { referenceId, load: load0 = null } = {}) {
   const load = cleanLoad(load0);
   const cfg = EXERCISES[exId];
@@ -65,31 +69,44 @@ export function analyzeSession({ frames, width, height }, exId, { referenceId, l
   const raw = Object.fromEntries(SERIES_KEYS.map((k) => [k, new Array(n).fill(NaN)]));
   const lens = { shin: [], thigh: [], torso: [], neck: [] };
   let valid = 0;
+  // 정강이 길이가 평소와 크게 다르면 발목 점이 잘못 잡힌 프레임(원판·바가 발목을 가림)으로 본다.
+  // 실제 영상: 데드리프트 마무리에서 발목 점이 무릎 쪽으로 튀어 정강이가 평소의 40%대로 줄고 무릎 각도 55°가 나옴.
+  const shinR = P.map((p) => (p?.ok ? dist(p.ankle, p.knee) : NaN));
+  const shinMed = median(shinR.filter(isNum));
+  if (shinMed > 0) for (let i = 0; i < n; i++) shinR[i] /= shinMed;
+  const badAnkle = shinR.map((r) => r < SHIN_OK[0] || r > SHIN_OK[1]);
+  // 튀는 구간 사이에 끼어 겨우 통과한 프레임(0.7–0.9)도 같은 구간으로 본다
+  const nearBad = (i) => badAnkle.slice(Math.max(0, i - 2), i + 3).some(Boolean);
+  const ankleBad = shinR.map((r, i) => badAnkle[i] || (Math.abs(r - 1) > SHIN_NEAR && nearBad(i)));
 
   P.forEach((p, i) => {
     if (!p || !p.ok) return;
     const fi = faceAt(i);
+    const shinLen = dist(p.ankle, p.knee);
+    const ankleOk = !(shinMed > 0) || !ankleBad[i];
     const shin = leanFromVertical(p.ankle, p.knee, fi);
     const thigh = leanFromVertical(p.knee, p.hip, fi);
     const trunk = leanFromVertical(p.hip, p.shoulder, fi);
     // 사람이 할 수 없는 자세(관절점이 뒤엉킨 프레임)는 버린다: 관절 각도는 0–180°(약간의 과신전 허용),
     // 상체는 뒤로 60° 넘게 젖혀질 수 없음. (실제 영상: 마무리 뒤 관절점이 튀며 엉덩이 각도 360°대가 나옴)
     const kA = kneeAngle(shin, thigh), hA = hipAngle(trunk, thigh);
-    if (!(kA >= 15 && kA <= 195 && hA >= 15 && hA <= 210 && trunk >= -60 && trunk <= 120)) return;
+    if (!((!ankleOk || (kA >= 15 && kA <= 195)) && hA >= 15 && hA <= 210 && trunk >= -60 && trunk <= 120)) return;
     valid++;
-    raw.shin[i] = shin; raw.thigh[i] = thigh; raw.trunk[i] = trunk;
-    raw.knee[i] = kA;
+    raw.thigh[i] = thigh; raw.trunk[i] = trunk;
     raw.hip[i] = hA;
     raw.hipX[i] = p.hip.x; raw.hipY[i] = p.hip.y;
     raw.kneeX[i] = p.knee.x; raw.kneeY[i] = p.knee.y;
-    raw.ankleX[i] = p.ankle.x; raw.ankleY[i] = p.ankle.y;
-    if (p.heel && p.foot) { raw.midX[i] = (p.heel.x + p.foot.x) / 2; raw.heelRel[i] = p.heel.y - p.foot.y; }
-    else raw.midX[i] = p.ankle.x + fi * 0.05 * dist(p.ankle, p.knee);
-    lens.shin.push(dist(p.ankle, p.knee));
     lens.thigh.push(dist(p.knee, p.hip));
     lens.torso.push(dist(p.hip, p.shoulder));
     if (p.ear) lens.neck.push(dist(p.shoulder, p.ear));
     raw.backCurv[i] = backCurvature(frames[i].back, fi);
+    if (!ankleOk) return; // 발목에 의존하는 값은 비워 두고 앞뒤 프레임으로 메운다
+    raw.shin[i] = shin;
+    raw.knee[i] = kA;
+    raw.ankleX[i] = p.ankle.x; raw.ankleY[i] = p.ankle.y;
+    if (p.heel && p.foot) { raw.midX[i] = (p.heel.x + p.foot.x) / 2; raw.heelRel[i] = p.heel.y - p.foot.y; }
+    else raw.midX[i] = p.ankle.x + fi * 0.05 * shinLen;
+    lens.shin.push(shinLen);
     raw.comB[i] = comOnFoot(p, load, exId);
   });
 

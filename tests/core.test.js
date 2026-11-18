@@ -117,6 +117,25 @@ test('프레임 15% 누락과 낮은 fps(15)에서도 반복 수 유지', () => 
   assert(res.coverage < 0.9 && res.coverage > 0.8, `coverage ${res.coverage}`);
 });
 
+test('발목 점이 무릎 쪽으로 튀는 프레임(원판 가림)은 발목 값만 버리고 메움', () => {
+  const demo = generateDemo('deadlift', { fps: 15, seed: 5 });
+  const clean = analyzeSession(generateDemo('deadlift', { fps: 15, seed: 5 }), 'deadlift');
+  const hit = [];
+  demo.frames.forEach((f, i) => {
+    if (!f.lm || clean.series.knee[i] < 170 || i % 3 === 0) return;
+    hit.push(i);
+    for (const [a, k] of [[27, 25], [28, 26], [29, 25], [30, 26], [31, 25], [32, 26]]) {
+      f.lm[a].x += (f.lm[k].x - f.lm[a].x) * 0.55; f.lm[a].y += (f.lm[k].y - f.lm[a].y) * 0.55;
+    }
+  });
+  const res = analyzeSession(demo, 'deadlift');
+  assert(hit.length > 10, `hit ${hit.length}`);
+  assert(res.reps.length === clean.reps.length, `reps ${res.reps.length} vs ${clean.reps.length}`);
+  const worst = Math.max(...hit.map((i) => Math.abs(res.series.ankleY[i] - clean.series.ankleY[i])));
+  assert(worst < 0.03 * demo.height, `ankle off ${worst.toFixed(1)}px`);
+  assert(hit.every((i) => res.series.knee[i] > 150), 'knee at lockout should stay extended');
+});
+
 test('좌우 반전(왼쪽을 보는 사람)도 같은 결과', () => {
   const demo = generateDemo('squat');
   demo.frames.forEach((f) => f.lm.forEach((p) => { p.x = 1 - p.x; }));

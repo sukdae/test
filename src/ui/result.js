@@ -72,6 +72,10 @@ export function showResult(result, opts = {}) {
   const showSkel = $('showSkel'), showGhost = $('showGhost'), showMuscle = $('showMuscle'), showFeet = $('showFeet'), showBack = $('showBack');
   // 발바닥 접지: 발끝 대비 뒤꿈치 높이 변화(양수 = 뒤꿈치 들림)
   const heelBase = median(s.heelRel), legLen = body.shin + body.thigh;
+  // 고스트 기준점: 세트 중 발은 고정이므로 발목 위치를 ±1초 중앙값으로 고정해 흔들림(바·원판 가림)을 없앤다.
+  const half = Math.max(3, Math.round((result.fps || 15) * 1));
+  const anchorOf = (arr) => arr.map((_, i) => median(arr.slice(Math.max(0, i - half), i + half + 1).filter(isNum)));
+  const ghostAX = anchorOf(s.ankleX), ghostAY = anchorOf(s.ankleY);
   // 앞꿈치 방향(음수)은 똑바로 설 때 랜드마크가 미세하게 바뀌며 생기는 오탐이라 표시하지 않는다.
   const footLift = (i) => (isNum(s.heelRel?.[i]) && isNum(heelBase) ? Math.max(0, (heelBase - s.heelRel[i]) / legLen) : NaN);
   // 동작 강도: 서 있을 때 0, 가장 깊이 내려갔을 때 1 → 근육 색 진하기에 반영
@@ -262,7 +266,7 @@ export function showResult(result, opts = {}) {
         const r = repAt(i);
         const tempoMode = ghostMode.value === 'tempo' && result.reference?.tempo;
         const phase = !r ? 0 : tempoMode ? phaseByTempo(result.reference.tempo, t[i] - t[r.start]) : r.phase[i - r.start];
-        drawGhost(ctx, result.exercise, phase, { x: s.ankleX[i], y: s.ankleY[i] }, result.facings ? { ...body, facing: result.facings[i] } : body, W, H, refProfile);
+        drawGhost(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, result.facings ? { ...body, facing: result.facings[i] } : body, W, H, refProfile);
       }
       if (showFeet.checked) { if (result.exercise !== 'deadlift') drawFootContact(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || result.load?.barKg > 0) drawBalance(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
       if (showBack.checked) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
