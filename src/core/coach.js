@@ -28,6 +28,8 @@ const DO = {
   'cu-hang': '매 반복 팔을 끝까지 펴고 매달렸다 당기세요',
   'cu-kip': '다리를 모으고 몸을 곧게 고정한 채 당기세요',
   'cu-fast-lower': '1초 이상에 걸쳐 천천히 내려오세요',
+  'cu-hip-flex': '엉덩이·무릎은 살짝만 굽히고 배에 힘을 줘 고정하세요',
+  'cu-leg-trend': '지치면 보조 무게를 늘려 다리 반동 없이 당기세요',
   'dip-shallow': '위팔이 바닥과 평행해질 때까지 내려가세요',
   'dip-lockout': '위에서 팔을 끝까지 펴며 마무리하세요',
   'dip-fast-lower': '1초 이상에 걸쳐 천천히 내려가세요',
@@ -87,15 +89,17 @@ export function buildCoaching(result, { max = 3 } = {}) {
   const ref = result.reference;
   const label = ref?.short;
   const mt = result.tempo || {}, rt = ref?.tempo;
+  // 리듬: 내려가기는 범위(2–4초)로, 올라오기는 상한(1.5초)으로 본다 [논문 11, 58–61] — exercises.js 의 tempo 주석
   if (label && rt && isNum(mt.descent) && isNum(rt.descent)) {
-    const d = mt.descent - rt.descent;
-    if (d < -0.25 && !used.has('fast-descent')) actions.push({ text: `${rt.descent.toFixed(1)}초에 걸쳐 내려가세요`, tag: `${label} ${rt.descent.toFixed(1)}초 · 나 ${mt.descent.toFixed(1)}초`, kind: 'pro', prio: 2 });
-    else if (Math.abs(d) <= 0.2) good.push(`내려가는 속도 ${josa(label, '과', '와')} 비슷`);
+    const [lo, hi] = rt.descentRange || [rt.descent - 0.25, rt.descent + 0.25];
+    const range = rt.descentRange ? `${lo}–${hi}초` : `${rt.descent.toFixed(1)}초`;
+    if (mt.descent < lo && !used.has('fast-descent')) actions.push({ text: `${range}에 걸쳐 천천히 내려가세요`, tag: `${label} ${range} · 나 ${mt.descent.toFixed(1)}초`, kind: 'pro', prio: 2 });
+    else if (mt.descent <= hi + 0.5) good.push(`내려가기 ${range}`);
   }
   if (label && rt && isNum(mt.ascent) && isNum(rt.ascent)) {
-    const d = mt.ascent - rt.ascent;
-    if (d > 0.3) actions.push({ text: '바닥을 더 힘차게 밀며 올라오세요', tag: `${label} ${rt.ascent.toFixed(1)}초 · 나 ${mt.ascent.toFixed(1)}초`, kind: 'pro', prio: 2 });
-    else if (Math.abs(d) <= 0.2) good.push(`올라오는 속도 ${josa(label, '과', '와')} 비슷`);
+    const max = rt.ascentMax ?? rt.ascent + 0.3;
+    if (mt.ascent > max) actions.push({ text: '바닥을 더 힘차게 밀며 올라오세요', tag: `${label} 약 ${rt.ascent.toFixed(0)}초 · 나 ${mt.ascent.toFixed(1)}초`, kind: 'pro', prio: 2 });
+    else good.push('힘차게 올라옴');
   }
   // 바닥 멈춤 시간은 논문 근거가 없고 측정도 불안정해 행동 지시로 쓰지 않는다(비교표에만 표시).
 

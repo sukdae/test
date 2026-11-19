@@ -83,7 +83,9 @@ export function drawGhost(ctx, exId, phase, ankle, body, W, H, profile = null) {
 // 상체 종목 기준 동작 고스트: 손목(바·손잡이)에 고정하고 기준 관절 각도로 팔·몸통을 그린다.
 export function drawGhostUpper(ctx, exId, phase, wrist, body, W, H) {
   if (!wrist || !isNum(wrist.x) || !isNum(body.forearm)) return;
-  const c = upperChain(referenceAngles(exId, phase), wrist, body, body.facing);
+  const a = referenceAngles(exId, phase);
+  const legs = isNum(a.hip) && isNum(a.knee) && isNum(body.thigh) && isNum(body.shin) ? { hip: a.hip, knee: a.knee } : null;
+  const c = upperChain(a, wrist, body, body.facing, legs);
   const scale = Math.max(W, H) / 1000;
   ctx.save();
   ctx.strokeStyle = cssVar('--c-ghost') || '#e879f9';
@@ -95,9 +97,10 @@ export function drawGhostUpper(ctx, exId, phase, wrist, body, W, H) {
   ctx.beginPath();
   ctx.moveTo(c.wrist.x, c.wrist.y); ctx.lineTo(c.elbow.x, c.elbow.y); ctx.lineTo(c.shoulder.x, c.shoulder.y); ctx.lineTo(c.hip.x, c.hip.y);
   ctx.moveTo(c.shoulder.x, c.shoulder.y); ctx.lineTo(c.head.x, c.head.y);
+  if (c.knee) { ctx.moveTo(c.hip.x, c.hip.y); ctx.lineTo(c.knee.x, c.knee.y); ctx.lineTo(c.ankle.x, c.ankle.y); }
   ctx.stroke();
   ctx.setLineDash([]);
-  for (const p of [c.elbow, c.shoulder, c.hip]) { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * scale, 0, Math.PI * 2); ctx.fill(); }
+  for (const p of [c.elbow, c.shoulder, c.hip, c.knee].filter(Boolean)) { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * scale, 0, Math.PI * 2); ctx.fill(); }
   ctx.globalAlpha = 0.5;
   ctx.beginPath(); ctx.arc(c.head.x, c.head.y, 26 * scale, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
@@ -525,7 +528,7 @@ export function drawBalance(ctx, lm, side, b, W, H) {
   const bb = Math.max(-0.2, Math.min(1.2, b));
   const x = heel.x + (toe.x - heel.x) * bb;
   const y = Math.max(heel.y, toe.y) + 34 * scale;
-  const ok = b >= 0.25 && b <= 0.75;
+  const ok = b >= 0.2 && b <= 0.8; // 발 중앙(0.5) ± 30% (feedback.js THRESHOLDS.balance)
   const color = ok ? '#22c55e' : '#f59e0b';
   ctx.save();
   ctx.fillStyle = color;

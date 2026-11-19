@@ -8,11 +8,14 @@ import { EXERCISES, bell, referenceAngles } from './exercises.js';
 import { chainFromAngles, upperChain } from './geometry.js';
 import { BACK_LEVELS } from './back.js';
 
+// 스쿼트 측면·정면 예시의 내려가기 시간(초). 두 영상이 같은 세트처럼 보이도록 같게 둔다
+export const SQUAT_DEMO_DESC = 2.5;
+
 export const DEMO_REPS = {
   squat: [{}, {}, { depth: 0.55 }, { lean: 1.5, hipsFirst: true, round: true }, { heel: true }],
   deadlift: [{}, {}, { hipsFirst: true, round: true }, { endTrunk: 14 }, { endTrunk: -24 }],
-  // 친업: 3회 = 턱이 바까지 못 올라감, 4회 = 몸 반동, 5회 = 팔을 덜 폄 (덜 편 자세가 영상 끝까지 이어지도록 마지막에)
-  chinup: [{}, {}, { short: 40 }, { kip: 28 }, { hang: 138 }],
+  // 친업: 2회 = 엉덩이를 많이 굽힘, 3회 = 턱이 바까지 못 올라감, 4회 = 몸 반동, 5회 = 팔을 덜 폄 (덜 편 자세가 영상 끝까지 이어지도록 마지막에)
+  chinup: [{}, { pike: 40 }, { short: 40 }, { kip: 28 }, { hang: 138 }],
   // 딥스: 3회 = 얕음, 5회 = 위에서 덜 폄
   dip: [{}, {}, { shallow: 45 }, {}, { lockout: 138 }],
 };
@@ -26,7 +29,13 @@ function mulberry32(a) {
   };
 }
 
-function anglesAt(T, R, p, prevOff) {
+function anglesAt(T, R, p, prevOff, exId) {
+  // 데드리프트 정상 반복은 기준 자세 키프레임(무릎 → 엉덩이 순서) 그대로 [논문 22]
+  if (exId === 'deadlift' && !R.hipsFirst) {
+    const a = referenceAngles('deadlift', p);
+    const trunk = a.trunk + (p <= 0.5 ? prevOff * (1 - bell(p)) : (R.endTrunk || 0) * (1 - bell(p)));
+    return { shin: a.shin, thigh: a.thigh, trunk, heelLift: 0 };
+  }
   const depth = R.depth ?? 1;
   const lean = R.lean ?? 1;
   let fK = bell(p), fT = bell(p), extraT = 0;
@@ -59,7 +68,8 @@ function generateLowerDemo(exId, { fps = 30, W = 720, H = 1280, seed = 7, reps }
   const ankle = { x: W * 0.42, y: H * 0.86 };
 
   // 타임라인: 시작 대기 → (하강, 정지, 상승, 대기) × 반복
-  const lead = 0.8, desc = 1.1, pause = 0.15, asc = 0.9, gap = 0.7;
+  // 스쿼트 예시는 권장 리듬(2–4초 내려가기 · 약 1초 올라오기)에 맞춰 2.5초에 내려간다 [논문 58]
+  const lead = 0.8, desc = exId === 'squat' ? SQUAT_DEMO_DESC : 1.1, pause = 0.15, asc = 0.9, gap = 0.7;
   const segs = [];
   let time = lead;
   list.forEach((R, k) => {
@@ -81,7 +91,7 @@ function generateLowerDemo(exId, { fps = 30, W = 720, H = 1280, seed = 7, reps }
       }
       break;
     }
-    const a = anglesAt(T, R, p, prevOff);
+    const a = anglesAt(T, R, p, prevOff, exId);
     const c = chainFromAngles(a, ankle, body, facing);
     // 등 윤곽(실험 기능용): 곧은 등 + 'round' 반복은 최저점에서 바깥으로 둥글게
     const bump = R.round ? 0.09 * bell(p) : 0;
@@ -137,7 +147,7 @@ export function generateFrontDemo({ fps = 30, W = 720, H = 1280, seed = 11, reps
   const rnd = mulberry32(seed);
   const noise = () => (rnd() - 0.5) * 4;
   const cx = W / 2, ankleY = H * 0.88, stanceHalf = 95, hipHalf = 60, shoulderHalf = 85;
-  const lead = 0.8, desc = 1.1, pause = 0.15, asc = 0.9, gap = 0.7;
+  const lead = 0.8, desc = SQUAT_DEMO_DESC, pause = 0.15, asc = 0.9, gap = 0.7;
   const segs = [];
   let time = lead;
   list.forEach((R) => { segs.push({ R, t0: time, tb0: time + desc, tb1: time + desc + pause, t1: time + desc + pause + asc }); time += desc + pause + asc + gap; });
@@ -217,7 +227,7 @@ function generateUpperDemo(exId, { fps = 30, W = 720, H = 1280, seed = 7, reps }
     if (R.hang) a.elbow -= (top0.elbow - R.hang) * (1 - b); // 팔을 덜 폄
     if (R.lockout) a.elbow -= (top0.elbow - R.lockout) * (1 - b);
     const legs = chin
-      ? { hip: 175 - (R.kip ? R.kip * (1 + Math.sin(2 * Math.PI * p * 2)) : 0), knee: 170 }
+      ? { hip: a.hip - (R.kip ? R.kip * (1 + Math.sin(2 * Math.PI * p * 2)) : 0) - (R.pike || 0) * bell(p), knee: a.knee }
       : { hip: 160, knee: 100 };
     const c = upperChain(a, wrist, body, facing, legs);
     frames.push({ t, lm: buildUpperLandmarks(c, facing, W, H, noise) });

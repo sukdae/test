@@ -1,6 +1,7 @@
 // 둘 다 모드: 측면+정면 3D 합성 진단표와 돌려 볼 수 있는 3D 뼈대
-import { fusedRows, idealPoses, midFoot, barPoint, FUSE_N } from '../core/fuse3d.js';
+import { fusedRows, idealPoses, midFoot, barPoint, extOf, FUSE_N } from '../core/fuse3d.js';
 import { cssVar } from './draw.js';
+import { phaseByTempo } from '../core/reference.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,7 +23,7 @@ export function showFused(fz) {
     const anyIssue = fz.reps.some((r) => r.issues.length);
     $('fusedChips').innerHTML = [`<button role="tab" data-r="0" aria-selected="${sel === 0}">전체</button>`]
       .concat(fz.reps.map((r, k) => `<button role="tab" data-r="${k + 1}" aria-selected="${sel === k + 1}" class="${r.issues.length ? 'bad' : ''}">${r.index}회${r.issues.length ? ' ⚠︎' : ''}</button>`)).join('');
-    const rows = fusedRows(cur().metrics, sel ? [] : fz.reps);
+    const rows = fusedRows(cur().metrics, sel ? [] : fz.reps, fz.exercise);
     const bad = rows.filter((r) => r.ok === false || r.reps?.length);
     $('fusedSummary').innerHTML = bad.length
       ? bad.map((r) => `<li class="bad">⚠︎ ${esc(r.issue || r.label)}${r.reps?.length ? ` <b>${r.reps.join('·')}회</b>` : ''}</li>`).join('')
@@ -56,6 +57,7 @@ export function showFused(fz) {
   $('fusedChips').addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { sel = Number(b.dataset.r); render(); } }, { signal: ac.signal });
   const LC = '#38bdf8', RC = '#fb923c', BC = '#facc15', IC = cssVar('--c-ghost') || '#e879f9';
   const ideal = idealPoses(fz, fz.exercise);
+  const idealExt = extOf(ideal);
   const showIdeal = $('fusedIdeal'), showBar = $('fusedBar');
   const start = performance.now();
   const loop = (now) => {
@@ -65,7 +67,19 @@ export function showFused(fz) {
     if (canvas.width !== Math.round(w * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const ph = ((now - start) / 3000) % 1;
+    // 실제 리듬으로 재생: 한 주기 = 내 반복 시간과 기준 반복 시간 중 긴 쪽 + 0.6초 쉼. 먼저 끝난 쪽은 선 자세로 기다린다.
+    //   리듬 정보가 없으면 예전처럼 3초 주기
+    const myT = cur().tempo || fz.tempo, refT = fz.refTempo || myT;
+    const dur = (x) => (x ? x.descent + x.ascent : 0);
+    let ph, phIdeal, cycle = 0, dt = 0;
+    if (myT) {
+      cycle = Math.max(dur(myT), dur(refT)) + 0.6;
+      dt = ((now - start) / 1000) % cycle;
+      ph = phaseByTempo(myT, dt);
+      phIdeal = phaseByTempo(refT, dt);
+    } else {
+      ph = phIdeal = ((now - start) / 3000) % 1;
+    }
     const k = Math.round(ph * (FUSE_N - 1));
     const pose = cur().poses[k];
     const s = (h / 2.1) * (1 + 0.9 * Math.max(0, pitch - 0.6) / (Math.PI / 2 - 0.6)), cx = w / 2, cy = h * 0.5, CY = 0.85; // 몸 가운데 높이(다리 길이 0.85)를 화면 가운데에
@@ -89,7 +103,7 @@ export function showFused(fz) {
     // 뼈대
     const line = (a, b, color, width = 4) => { if (!a || !b) return; const A = proj(a), B = proj(b); ctx.strokeStyle = color; ctx.lineWidth = width; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke(); };
     // 기준 자세 (점선, 같은 위상)
-    const ip = ideal && showIdeal?.checked ? ideal[Math.round(ph * (FUSE_N - 1))] : null;
+    const ip = ideal && showIdeal?.checked ? ideal[Math.round(phIdeal * (FUSE_N - 1))] : null;
     if (ip) {
       ctx.save(); ctx.setLineDash([6, 5]); ctx.globalAlpha = 0.9;
       for (const S of ['L', 'R']) { const J = ip[S]; line(J.shoulder, J.hip, IC, 3); line(J.hip, J.knee, IC, 3); line(J.knee, J.ankle, IC, 3); }
@@ -127,7 +141,29 @@ export function showFused(fz) {
     ctx.fillStyle = LC; ctx.fillText('● 왼쪽', 8, 16); ctx.fillStyle = RC; ctx.fillText('● 오른쪽', 8, 32);
     let ly = 48;
     if (ip) { ctx.fillStyle = IC; ctx.fillText('┄ 기준 자세', 8, ly); ly += 16; }
-    if (bar?.path?.some(Boolean)) { ctx.fillStyle = BC; ctx.fillText('● 바 궤적 (추정)', 8, ly); }
+    if (bar?.path?.some(Boolean)) { ctx.fillStyle = BC; ctx.fillText('● 바 궤적 (추정)', 8, ly); ly += 16; }
+    // 펴짐(신전) 막대: 올라오는 동안 무릎·엉덩이가 얼마나 펴졌는지(0–100%). 보라 눈금 = 기준 자세의 같은 순간
+    const ex = cur().metrics.ext;
+    if (ex && ph > 0.5) {
+      const bars = [['무릎', ex.kneeProg[k], idealExt?.kneeProg[Math.round(phIdeal * (FUSE_N - 1))]], ['엉덩이', ex.hipProg[k], idealExt?.hipProg[Math.round(phIdeal * (FUSE_N - 1))]]];
+      bars.forEach(([name, v, iv], j) => {
+        const y = h - 58 + j * 14, x = w - 108;
+        ctx.fillStyle = cssVar('--muted') || '#94a3b8'; ctx.fillText(name, x - 40, y + 7);
+        ctx.fillStyle = cssVar('--border') || '#334155'; ctx.fillRect(x, y, 100, 6);
+        if (isFinite(v)) { ctx.fillStyle = j ? RC : LC; ctx.fillRect(x, y, 100 * v, 6); }
+        if (ip && isFinite(iv)) { ctx.fillStyle = IC; ctx.fillRect(x + 100 * iv - 1, y - 2, 2, 10); }
+      });
+      ctx.fillStyle = cssVar('--muted') || '#94a3b8'; ctx.fillText('펴짐', w - 108, h - 64);
+    }
+    // 리듬 표시: 내려가기↓ / 올라오기↑ 초, 진행 막대
+    if (myT) {
+      const fmt = (x) => `↓${x.descent.toFixed(1)}초 ↑${x.ascent.toFixed(1)}초`;
+      ctx.fillStyle = cssVar('--text') || '#e2e8f0';
+      ctx.fillText(`나 ${fmt(myT)}`, 8, h - 26);
+      if (fz.refTempo && ip) { ctx.fillStyle = IC; ctx.fillText(`기준 ${fmt(fz.refTempo)}${fz.refRange ? ` (내려가기 ${fz.refRange[0]}–${fz.refRange[1]}초 범위)` : ''}`, 8, h - 10); }
+      ctx.fillStyle = cssVar('--border') || '#334155'; ctx.fillRect(w - 108, h - 16, 100, 4);
+      ctx.fillStyle = cssVar('--accent') || '#818cf8'; ctx.fillRect(w - 108, h - 16, 100 * (dt / cycle), 4);
+    }
   };
   raf = requestAnimationFrame(loop);
 }

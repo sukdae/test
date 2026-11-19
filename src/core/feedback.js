@@ -23,6 +23,7 @@ export const REFS = {
   krajewski: 'Krajewski 외 (2019)',
   ramirez: 'Ramirez 외 (2024)',
   cherni: 'Cherni 외 (2026)',
+  kojic: 'Kojic 외 (2024)',
 };
 
 export const THRESHOLDS = {
@@ -38,8 +39,8 @@ export const THRESHOLDS = {
     hipsFirstTrunk: 3,
     // 뒤꿈치 들림 (다리 길이 대비) [초깃값 · 논문 근거 없음]
     heelLift: 0.03,
-    // 너무 빠른 하강: 느린 내려가기가 유리하다는 방향은 [논문 11], 0.5초라는 값은 [초깃값]
-    fastDescent: 0.5,
+    // 너무 빠른 하강: 1초 이하로 내려간 그룹이 4초 그룹보다 근력·근비대 증가가 작음 [논문 58]. 1초 미만이면 안내
+    fastDescent: 1.0,
     // 반복 간 깊이 편차 [초깃값]
     depthStd: 8,
   },
@@ -59,8 +60,9 @@ export const THRESHOLDS = {
   // 단정하지 않고 '참고'로만 표시.
   core: { backRound: 4, backArch: -4, wobble: 2.5 },
   // 무게중심 앞뒤 이동: 최저점에서 서 있을 때보다 발 길이의 몇 %만큼 움직였는지.
-  // 발 앞·뒤 체중 분배가 관절 부하를 바꿈 [논문 45, 46]. ±25%는 논문에 수치가 없어 [초깃값]
-  balance: 0.25,
+  // 발 앞·뒤 체중 분배가 관절 부하를 바꿈 [논문 45, 46]. 기준값은 논문에 수치가 없어 [초깃값]
+  //   처음엔 ±25%였으나 논문 기반 기준 자세(평행 깊이, 상체 = 정강이 30°) 자체가 −25% 근처로 나와 경계에 걸림 → ±30%
+  balance: 0.3,
 };
 
 const C = THRESHOLDS.core;
@@ -126,10 +128,10 @@ const RULES = {
       detail: () => '발 전체로 바닥을 누르는 느낌을 유지해 보세요. 발목이 뻣뻣하다면 스탠스를 조금 넓히는 것도 방법이에요.',
     },
     {
-      id: 'fast-descent', level: 'info', group: 'tempo', ref: REFS.wilk,
+      id: 'fast-descent', level: 'info', group: 'tempo', ref: `${REFS.wilk}, ${REFS.kojic}`,
       when: (m) => m.descent < T.fastDescent,
       title: '내려가는 속도가 빨라요',
-      detail: (hit) => `하강 시간 평균 ${avgOf(hit, 'descent').toFixed(1)}초. 천천히 내려가고 힘차게 올라오는 조합을 해 보세요.`,
+      detail: (hit) => `하강 시간 평균 ${avgOf(hit, 'descent').toFixed(1)}초. 스쿼트를 1초에 내려간 그룹보다 4초에 내려간 그룹의 근력·근육 증가가 컸다는 연구가 있어요. 2–4초에 걸쳐 내려가고 힘차게 올라와 보세요.`,
     },
   ],
   deadlift: (T) => [
@@ -244,7 +246,7 @@ export function evaluateFeedback(exId, reps, { load = null } = {}) {
   }
 
   const goods = [...GOOD[exId], { group: 'core', title: '코어가 안정적이에요', detail: '등 윤곽이 서 있을 때와 비슷하게 유지되고 상체 흔들림도 적어요.', ok: () => hasBack },
-    { group: 'balance', title: '무게중심이 발 중앙에 있어요', detail: '최저점에서도 무게중심(추정)이 서 있을 때 위치에서 발 길이의 ±25% 안에 있어요.', ok: (rs) => (exId !== 'deadlift' || dlBalance) && rs.some((r) => isNum(r.metrics.comShift)) }];
+    { group: 'balance', title: '무게중심이 발 중앙에 있어요', detail: '최저점에서도 무게중심(추정)이 서 있을 때 위치에서 발 길이의 ±30% 안에 있어요.', ok: (rs) => (exId !== 'deadlift' || dlBalance) && rs.some((r) => isNum(r.metrics.comShift)) }];
   for (const g of goods) {
     if (firedGroups.has(g.group)) continue;
     if (g.ok && !g.ok(reps)) continue;

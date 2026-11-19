@@ -6,6 +6,7 @@
 
 import { mean, median, isNum } from './signal.js';
 import { kneeAngle, hipAngle } from './geometry.js';
+import { EXERCISES } from './exercises.js';
 
 export const CURVE_POINTS = 101;
 const KEYS = ['shin', 'thigh', 'trunk'];
@@ -35,8 +36,25 @@ export function bottomPause(sig, t, rep, tol = 5) {
   return t[b] - t[a];
 }
 
+// 반복별 리듬: 내려가기(시작→최저점) · 바닥 멈춤 · 올라오기(최저점→끝). 잘린 쪽은 NaN.
+//   친업은 '최저점' = 가장 높이 당긴 순간이라 down = 당기기, up = 내려오기.
+//   ref = 기준 리듬({ descentRange, ascentMax }) 이 있으면 범위 판정도 붙인다.
+export function repRhythm(result, ref = null) {
+  const sig = result.series[EXERCISES[result.exercise]?.repSignal || 'knee'];
+  const t = result.t;
+  return result.reps.map((r) => {
+    const down = r.partialStart ? NaN : t[r.bottom] - t[r.start];
+    const up = r.partialEnd ? NaN : t[r.end] - t[r.bottom];
+    const pause = r.partialStart || r.partialEnd ? NaN : bottomPause(sig, t, r);
+    const [lo, hi] = ref?.descentRange || [];
+    const downCheck = !isNum(down) || lo == null ? '' : down < lo ? 'fast' : down > hi ? 'slow' : 'ok';
+    const upCheck = !isNum(up) || ref?.ascentMax == null ? '' : up > ref.ascentMax ? 'slow' : 'ok';
+    return { rep: r.index, down, pause, up, start: t[r.start], bottom: t[r.bottom], end: t[r.end], partial: !!(r.partialStart || r.partialEnd), downCheck, upCheck };
+  });
+}
+
 export function tempoOf(result, reps) {
-  const sig = result.series[result.exercise === 'deadlift' ? 'hip' : 'knee'];
+  const sig = result.series[EXERCISES[result.exercise]?.repSignal || 'knee'];
   const t = result.t;
   const bottoms = reps.map((r) => t[r.bottom]);
   const gaps = bottoms.slice(1).map((b, i) => b - bottoms[i]);

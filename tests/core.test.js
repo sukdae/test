@@ -1,5 +1,5 @@
 // 코어 로직 테스트 (브라우저: tests/index.html, Node: node --test tests/)
-import { analyzeSession, comOnFoot, cleanLoad } from '../src/core/analyze.js';
+import { analyzeSession, comOnFoot, cleanLoad, toCSV } from '../src/core/analyze.js';
 import { generateDemo, generateFrontDemo } from '../src/core/synthetic.js';
 import { analyzeFront, inward, compareFrontIdeal } from '../src/core/front.js';
 import { estimateFrontMuscles } from '../src/core/muscles.js';
@@ -11,7 +11,7 @@ import { getReference, IDEAL_SQUAT_FRONT } from '../src/core/exercises.js';
 import { buildCoaching, mergeCoaching, compareViews } from '../src/core/coach.js';
 import { josa } from '../src/core/signal.js';
 import { detectView } from '../src/core/landmarks.js';
-import { fuse3D, fusedRows, idealPoses, barPoint } from '../src/core/fuse3d.js';
+import { fuse3D, fusedRows, idealPoses, barPoint, extOf } from '../src/core/fuse3d.js';
 import { upperAngles } from '../src/core/upper.js';
 import { upperChain } from '../src/core/geometry.js';
 
@@ -80,7 +80,7 @@ test('스쿼트 데모: 정상 반복은 기준과 거의 일치, 위상은 단�
   for (let i = 1; i < r1.phase.length; i++) assert(r1.phase[i] >= r1.phase[i - 1] - 1e-9, 'phase not monotonic');
   assert(Math.abs(r1.metrics.minKnee - 60) < 5, `minKnee ${r1.metrics.minKnee}`);
   assert(Math.abs(r1.metrics.thighAboveParallel) < 5, `thigh ${r1.metrics.thighAboveParallel}`);
-  assert(Math.abs(r1.metrics.descent - 1.1) < 0.3, `descent ${r1.metrics.descent}`);
+  assert(Math.abs(r1.metrics.descent - 2.5) < 0.4, `descent ${r1.metrics.descent}`);
 });
 
 test('데드리프트 데모: 5회, 락아웃·젖힘 감지, 엉덩이 먼저는 경고하지 않음(논문 15·22)', () => {
@@ -173,17 +173,17 @@ test('코어: 등 데이터가 없으면(예전 기록) 곡률 판정 없이 동
 test('기준 추출: 데모에서 만든 프로필의 리듬과 곡선이 원래 값과 일치', () => {
   const res = analyzeSession(generateDemo('squat', { reps: [{}, {}, {}, {}] }), 'squat');
   const ref = buildReference(res, { id: 'x', name: 'x', short: 'x' });
-  // 데모: 하강 1.1초, 정지 0.15초, 상승 0.9초, 간격 2.85초
-  assert(Math.abs(ref.tempo.descent - 1.1) < 0.25, `descent ${ref.tempo.descent}`);
+  // 데모: 하강 2.5초, 정지 0.15초, 상승 0.9초, 간격 4.25초
+  assert(Math.abs(ref.tempo.descent - 2.5) < 0.4, `descent ${ref.tempo.descent}`);
   assert(Math.abs(ref.tempo.ascent - 1.05) < 0.3, `ascent ${ref.tempo.ascent}`);
-  assert(Math.abs(ref.tempo.interval - 2.85) < 0.15, `interval ${ref.tempo.interval}`);
+  assert(Math.abs(ref.tempo.interval - 4.25) < 0.15, `interval ${ref.tempo.interval}`);
   const b = curveAngles(ref, 0.5);
   assert(Math.abs(b.knee - 60) < 6, `ref bottom knee ${b.knee}`);
 });
 
 test('논문 기반 기준 자세: 비교·리듬 동작, 위상 단조 증가', () => {
   const res = analyzeSession(generateDemo('squat'), 'squat', { referenceId: 'ideal' });
-  assert(res.reference.id === 'ideal' && res.reference.tempo.descent === 2, 'reference missing');
+  assert(res.reference.id === 'ideal' && res.reference.tempo.descent === 3 && res.reference.tempo.descentRange[0] === 2, 'reference missing');
   assert(res.diffs.every((d) => d.text.includes('기준보다')), res.diffs.map((d) => d.text).join('|'));
   const tempo = getReference('squat', 'ideal').tempo;
   let prev = -1;
@@ -264,7 +264,7 @@ test('둘 다: 측면+정면 코칭 합치기 (최대 3개, 경고 우선)', () 
   const side = analyzeSession(generateDemo('squat'), 'squat');
   const front = analyzeFront(generateFrontDemo(), 'squat');
   const c = mergeCoaching(side, front);
-  assert(c.actions.length === 3 && c.more >= 2, JSON.stringify(c.actions));
+  assert(c.actions.length === 3 && c.more >= 1, JSON.stringify(c.actions));
   assert(c.actions.every((a) => a.prio === 0), 'warnings first');
   assert(new Set(c.actions.map((a) => a.view)).size === 2, `both views in top 3: ${c.actions.map((a) => a.view)}`);
   const views = new Set(mergeCoaching(side, front, { max: 99 }).actions.map((a) => a.view));
@@ -341,16 +341,25 @@ test('상체 기하: 기준 각도 → 손목 고정 팔·몸통 → 각도 왕�
   }
 });
 
-test('친업 데모: 5회, 턱 높이·매달림·몸 반동 감지', () => {
+test('친업 데모: 5회, 턱 높이·매달림·몸 반동·엉덩이 굽힘 감지', () => {
   const res = analyzeSession(generateDemo('chinup'), 'chinup');
   assert(res.reps.length === 5, `reps=${res.reps.length}`);
   const by = Object.fromEntries(res.feedback.map((f) => [f.id, f.reps.join(',')]));
   assert(by['cu-top'] === '3', `top ${by['cu-top']}`);
   assert(by['cu-kip'] === '4', `kip ${by['cu-kip']}`);
   assert(by['cu-hang'] === '5', `hang ${by['cu-hang']}`);
+  assert(by['cu-hip-flex']?.split(',').includes('2') && !by['cu-hip-flex'].split(',').includes('1'), `hip flex ${by['cu-hip-flex']}`);
+  assert(Math.abs(res.reps[0].metrics.hipFlex - 27) < 3, `ref hip flex ${res.reps[0].metrics.hipFlex}`);
   assert(res.reps[0].meanAbsDiff < 3, `ref match ${res.reps[0].meanAbsDiff}`);
   const ph = res.reps[0].phase;
   assert(ph.every((p, i) => i === 0 || p >= ph[i - 1] - 1e-9), 'phase monotonic');
+});
+
+test('친업: 반복할수록 다리 흔들림이 커지면 참고 안내 (논문 57)', () => {
+  const res = analyzeSession(generateDemo('chinup', { reps: [{}, { kip: 6 }, { kip: 9 }, { kip: 12 }] }), 'chinup');
+  const f = res.feedback.find((x) => x.id === 'cu-leg-trend');
+  assert(f && f.level === 'info', `trend ${res.feedback.map((x) => x.id)}`);
+  assert(!res.feedback.some((x) => x.id === 'cu-kip'), 'small swings are not kipping');
 });
 
 test('친업: 팔 관절점이 화면 끝에 걸려 아래팔이 짧아지는 프레임은 팔 값만 버리고 메움 (반복이 둘로 안 나뉨)', () => {
@@ -376,6 +385,51 @@ test('딥스 데모: 5회, 얕음·위에서 덜 폄 감지, 보조 무게로 �
   assert(!by['dip-deep'], 'normal depth is not too deep');
   assert(res.feedback.find((f) => f.id === 'assist-load')?.title.includes('45kg'), 'effective load');
   assert(Math.abs(res.reps[0].metrics.shoulderExt - 68) < 3, `shoulder ext ${res.reps[0].metrics.shoulderExt}`);
+});
+
+test('스쿼트 리듬: 내려가기 2–4초 범위 밖이면 안내, 안이면 칭찬 (논문 11, 58–61)', () => {
+  const ok = analyzeSession(generateDemo('squat', { reps: [{}, {}, {}] }), 'squat');
+  const c1 = buildCoaching(ok);
+  assert(!c1.actions.some((a) => a.text.includes('천천히 내려가세요')), `actions ${c1.actions.map((a) => a.text)}`);
+  assert(c1.good.some((g) => g.startsWith('내려가기 2–4초')), `good ${c1.good}`);
+  const fast = { ...ok, tempo: { ...ok.tempo, descent: 1.2, ascent: 2.0 } };
+  const c2 = buildCoaching(fast);
+  assert(c2.actions.some((a) => a.text === '2–4초에 걸쳐 천천히 내려가세요'), `fast ${c2.actions.map((a) => a.text)}`);
+  assert(c2.actions.some((a) => a.text.includes('힘차게')), 'slow ascent');
+});
+
+test('리듬: 반복별 내려가기·올라오기 시간이 CSV와 3D에 들어감', () => {
+  const side = analyzeSession(generateDemo('squat'), 'squat');
+  const csv = toCSV(side);
+  const lines = csv.split('\n');
+  const h = lines.findIndex((l) => l.startsWith('rep,start_s,bottom_s,end_s,down_s,bottom_pause_s,up_s,partial,down_check,up_check'));
+  assert(h > 0, 'rhythm header');
+  const rows = lines.slice(h + 1, h + 1 + side.reps.length).map((l) => l.split(','));
+  assert(rows.length === side.reps.length, `rows ${rows.length}`);
+  assert(rows.every((r) => Math.abs(+r[4] - 2.5) < 0.5 && r[8] === 'ok'), `down ${rows.map((r) => r[4] + r[8])}`);
+  const fz = fuse3D(side, analyzeFront(generateFrontDemo(), 'squat'));
+  assert(fz.tempo && Math.abs(fz.tempo.descent - 2.5) < 0.5, `3D tempo ${JSON.stringify(fz.tempo)}`);
+  assert(fz.refTempo.descent === 3 && fz.refRange[0] === 2, 'ref tempo');
+  assert(fz.reps.every((r) => r.tempo && r.tempo.descent > 1.5), 'per-rep tempo');
+  const dip = toCSV(analyzeSession(generateDemo('dip'), 'dip'));
+  assert(dip.startsWith('frame,time_s,elbow_deg') && dip.includes('down_s = 내려가기'), 'upper csv');
+});
+
+test('펴짐(신전): 스쿼트는 함께, 엉덩이 먼저 올라오는 반복은 무릎 먼저, 데드리프트는 무릎 → 엉덩이 (논문 22, 64)', () => {
+  const sq = analyzeSession(generateDemo('squat', { reps: [{}, {}, { hipsFirst: true }] }), 'squat');
+  const o = sq.reps.map((r) => r.metrics.extOrder);
+  assert(o[0] === 'together' && o[1] === 'together', `normal ${o}`);
+  assert(sq.reps[2].metrics.extLead > sq.reps[0].metrics.extLead + 0.05, `hips-first lead ${sq.reps.map((r) => r.metrics.extLead)}`);
+  assert(sq.reps.every((r) => r.metrics.topKnee > 160 && r.metrics.kneePeakVel > 0), 'lockout + velocity');
+  const dl = analyzeSession(generateDemo('deadlift', { reps: [{}, {}] }), 'deadlift');
+  assert(dl.reps.every((r) => r.metrics.extOrder === 'knee-first'), `deadlift ${dl.reps.map((r) => r.metrics.extOrder + r.metrics.extLead)}`);
+  const csv = toCSV(sq);
+  assert(csv.includes('knee_ext_vel_dps') && csv.includes('ext_order') && csv.includes(',together,'), 'csv ext');
+  const fz = fuse3D(sq, analyzeFront(generateFrontDemo(), 'squat'));
+  assert(fz.metrics.ext && fz.metrics.ext.order, 'fused ext');
+  assert(fusedRows(fz.metrics, fz.reps, 'squat').some((r) => r.key === 'extOrder'), 'fused row');
+  const ie = extOf(idealPoses(fz, 'squat'));
+  assert(ie.order === 'together', `ideal squat ${ie.order} ${ie.lead}`);
 });
 
 test('촬영 방향 자동 판정', () => {

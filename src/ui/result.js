@@ -2,6 +2,7 @@
 import { EXERCISES, referenceAngles, getReference, REFERENCES } from '../core/exercises.js';
 import { analyzeSession } from '../core/analyze.js';
 import { UPPER_THRESHOLDS } from '../core/upper.js';
+import { THRESHOLDS } from '../core/feedback.js';
 import { phaseByTempo } from '../core/reference.js';
 import { renderVersus } from './versus.js';
 import { buildCoaching } from '../core/coach.js';
@@ -160,7 +161,7 @@ export function showResult(result, opts = {}) {
     else if (reps.length) cards.push(['발바닥 접지', `${reps.filter((x) => !lifted(x)).length}/${reps.length}회 고정`, '뒤꿈치가 발끝 대비 뜨지 않음']);
     if (isNum(m.backRound)) cards.push(['등 곡률 변화 (실험)', `${m.backRound >= 0 ? '+' : ''}${m.backRound.toFixed(1)}%`, m.backRound > 4 ? '서 있을 때보다 둥글어짐 (참고)' : m.backRound < -4 ? '서 있을 때보다 젖혀짐 (참고)' : '서 있을 때와 비슷 (±4% 이내)']);
     const balOn = result.exercise !== 'deadlift' || result.load?.barKg > 0;
-    if (balOn && isNum(m.comShift)) cards.push(['무게중심 이동 (추정)', Math.abs(m.comShift) <= 0.25 ? '안정 ✓' : m.comShift > 0 ? '앞으로 쏠림' : '뒤로 쏠림', `최저점 · 서 있을 때보다 발 길이의 ${m.comShift >= 0 ? '+' : '−'}${Math.round(Math.abs(m.comShift) * 100)}%${result.load?.barKg > 0 ? ` · 바벨 ${result.load.barKg}kg 포함` : ''}`]);
+    if (balOn && isNum(m.comShift)) cards.push(['무게중심 이동 (추정)', Math.abs(m.comShift) <= THRESHOLDS.balance ? '안정 ✓' : m.comShift > 0 ? '앞으로 쏠림' : '뒤로 쏠림', `최저점 · 서 있을 때보다 발 길이의 ${m.comShift >= 0 ? '+' : '−'}${Math.round(Math.abs(m.comShift) * 100)}%${result.load?.barKg > 0 ? ` · 바벨 ${result.load.barKg}kg 포함` : ''}`]);
     if (!r && result.load) cards.push(['무게', `몸 ${result.load.bodyKg}kg · 바벨 ${result.load.barKg}kg`, '입력값 (기기에만 저장)']);
     if (isNum(m.trunkWobble)) cards.push(['상체 흔들림', `±${m.trunkWobble.toFixed(1)}°`, m.trunkWobble > 2.5 ? '흔들림 있음' : '안정']);
     cards.push(['기준과 평균 차이', isNum(diff) ? `${Math.round(diff)}°` : '–', '세 각도 평균']);

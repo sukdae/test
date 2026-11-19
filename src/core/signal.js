@@ -81,3 +81,13 @@ export function rangeMax(a, from, to) {
   for (let i = from; i <= to; i++) if (isNum(a[i]) && a[i] > m) m = a[i];
   return m === -Infinity ? NaN : m;
 }
+
+// 시간 미분(중앙 차분). 각도 시계열 → 각속도(°/s)
+export function derivative(a, t) {
+  const n = a.length, out = new Array(n).fill(NaN);
+  for (let i = 0; i < n; i++) {
+    const p = Math.max(0, i - 1), q = Math.min(n - 1, i + 1);
+    if (q > p && isNum(a[p]) && isNum(a[q]) && t[q] > t[p]) out[i] = (a[q] - a[p]) / (t[q] - t[p]);
+  }
+  return out;
+}

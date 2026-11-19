@@ -177,6 +177,35 @@ export function barPathOf(poses, exId = 'squat') {
   return { path, fwd: span('z'), lat: span('x'), fromFoot: far };
 }
 
+// 3D 펴짐(신전) 지표: 위상별 무릎·엉덩이 각도(양쪽 평균)와 올라오는 구간의 진행도
+//   squat = 엉덩이·무릎이 함께, deadlift = 무릎 → 엉덩이 순서 [논문 22, 64]. '함께' 범위 ±0.04 [초깃값] (analyze.js 와 같음)
+const EXT_TOGETHER = 0.04;
+export const EXT_EXPECT = { squat: 'together', deadlift: 'knee-first' };
+export const EXT_KO = { together: '함께 펴짐', 'knee-first': '무릎 먼저', 'hip-first': '엉덩이 먼저' };
+export function extOf(poses) {
+  if (!poses?.length) return null;
+  const avg = (f) => { const v = ['L', 'R'].map(f).filter(isNum); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : NaN; };
+  const knee = poses.map((p) => avg((S) => (p[S].hip && p[S].knee && p[S].ankle ? angle3(p[S].hip, p[S].knee, p[S].ankle) : NaN)));
+  const hip = poses.map((p) => avg((S) => (p[S].shoulder && p[S].hip && p[S].knee ? angle3(p[S].shoulder, p[S].hip, p[S].knee) : NaN)));
+  const b = (FUSE_N - 1) / 2;
+  const asc = (a) => a.slice(b);
+  const prog = (a) => { const lo = a[b], hi = Math.max(...asc(a).filter(isNum)); return a.map((v, k) => (k < b || !(hi - lo > 5) ? NaN : Math.max(0, Math.min(1, (v - lo) / (hi - lo))))); };
+  const kp = prog(knee), hp = prog(hip);
+  const early = Math.round(b + 0.4 * b); // 올라오는 구간 앞 40% (analyze.js EXT_EARLY 와 같음)
+  const d = kp.slice(b, early + 1).map((v, i) => v - hp[b + i]).filter(isNum);
+  const lead = d.length ? d.reduce((x, y) => x + y, 0) / d.length : NaN;
+  const last = poses[FUSE_N - 1];
+  const mid = (j) => (last.L[j] && last.R[j] ? { x: (last.L[j].x + last.R[j].x) / 2, y: (last.L[j].y + last.R[j].y) / 2, z: (last.L[j].z + last.R[j].z) / 2 } : null);
+  const sh = mid('shoulder'), hpp = mid('hip');
+  const fwd = sh && hpp ? Math.atan2(sh.z - hpp.z, sh.y - hpp.y) * DEG : NaN;
+  return {
+    knee, hip, kneeProg: kp, hipProg: hp, lead,
+    order: !isNum(lead) ? '' : lead > EXT_TOGETHER ? 'knee-first' : lead < -EXT_TOGETHER ? 'hip-first' : 'together',
+    topKnee: Math.max(...asc(knee).filter(isNum)), topHip: Math.max(...asc(hip).filter(isNum)),
+    leanBack: isNum(fwd) ? Math.max(0, -fwd) : NaN,
+  };
+}
+
 // 판정에 걸린 항목 key 목록 (fusedRows 의 key 와 같음)
 export function issuesOf(m) {
   const T = FUSE_THRESHOLDS, out = [];
@@ -197,6 +226,7 @@ export function fuse3D(side, front) {
   const poses = combine(sp, fp);
   const metrics = metricsOf(poses);
   metrics.bar = barPathOf(poses, side.exercise);
+  metrics.ext = extOf(poses);
 
   const sr = fullReps(side.reps), fr = fullReps(front.reps);
   const reps = [];
@@ -205,7 +235,11 @@ export function fuse3D(side, front) {
     if (!a || !b) continue;
     const p = combine(a, b), m = metricsOf(p);
     m.bar = barPathOf(p, side.exercise);
-    reps.push({ index: k + 1, poses: p, metrics: m, issues: issuesOf(m) });
+    m.ext = extOf(p);
+    // 그 반복의 실제 리듬(측면 영상 기준): 3D를 이 속도로 재생한다
+    const r = sr[k], t = side.t;
+    const tempo = t ? { descent: t[r.bottom] - t[r.start], bottom: 0, ascent: t[r.end] - t[r.bottom] } : null;
+    reps.push({ index: k + 1, poses: p, metrics: m, issues: issuesOf(m), tempo });
   }
 
   const warnings = [];
@@ -213,11 +247,17 @@ export function fuse3D(side, front) {
     warnings.push('측면·정면 깊이가 많이 달라요. 같은 세트인지 확인해 주세요.');
   }
   if (sr.length !== fr.length) warnings.push(`반복 수가 달라서(측면 ${sr.length} · 정면 ${fr.length}) 앞 ${reps.length}회만 짝지었어요.`);
-  return { exercise: side.exercise || 'squat', poses, metrics, reps, warnings };
+  // 리듬: 내 리듬(측면 영상, 바닥 멈춤 포함)과 기준 리듬(논문 기반 기준이 있을 때). 없으면 3D는 고정 3초 주기로 재생
+  const ex = side.exercise || 'squat';
+  const okTempo = (x) => (x && isNum(x.descent) && isNum(x.ascent) && x.descent > 0 && x.ascent > 0 ? { descent: x.descent, bottom: isNum(x.bottom) ? x.bottom : 0, ascent: x.ascent } : null);
+  const tempo = okTempo(side.tempo);
+  const refTempo = okTempo(getReference(ex, 'ideal')?.tempo);
+  const refRange = getReference(ex, 'ideal')?.tempo?.descentRange || null;
+  return { exercise: ex, poses, metrics, reps, warnings, tempo, refTempo, refRange };
 }
 
 // 3D 진단표 행 (짧게). m = 지표, repsList = 반복별 결과(전체 보기일 때 '몇 회'를 붙임)
-export function fusedRows(m, repsList = []) {
+export function fusedRows(m, repsList = [], exId = 'squat') {
   if (!m) return [];
   const T = FUSE_THRESHOLDS, rows = [];
   const hit = (key) => repsList.filter((r) => r.issues.includes(key)).map((r) => r.index);
@@ -236,6 +276,16 @@ export function fusedRows(m, repsList = []) {
     rows.push({ key: 'barFwd', label: '바 앞뒤 흔들림', value: `다리 길이의 ${pct(m.bar.fwd)}`, ok: null, reps: [] });
     rows.push({ key: 'barLat', label: '바 좌우 흔들림', value: `다리 길이의 ${pct(m.bar.lat)}`, ok: null, reps: [] });
     if (isNum(m.bar.fromFoot)) rows.push({ key: 'barFoot', label: '발 가운데에서 최대', value: `${m.bar.fromFoot > 0 ? '앞' : '뒤'} ${pct(m.bar.fromFoot)}`, ok: null, reps: [] });
+  }
+  if (m.ext && m.ext.order) {
+    const want = EXT_EXPECT[exId];
+    const bad = repsList.filter((r) => r.metrics.ext?.order && want && r.metrics.ext.order !== want);
+    const hit = bad.map((r) => r.index);
+    const badOrder = bad.length ? bad[0].metrics.ext.order : m.ext.order;
+    const ISSUE = { 'knee-first': '올라올 때 무릎이 먼저 펴져요(엉덩이가 먼저 올라옴)', 'hip-first': '올라올 때 엉덩이가 먼저 펴져요', together: '올라올 때 무릎·엉덩이가 함께 펴져요' };
+    rows.push({ key: 'extOrder', issue: ISSUE[badOrder], label: `펴지는 순서 (기준: ${EXT_KO[want] || '–'})`, value: EXT_KO[m.ext.order], ok: want ? m.ext.order === want : null, reps: hit });
+    rows.push({ key: 'extTop', label: '마무리 무릎 / 엉덩이', value: `${m.ext.topKnee.toFixed(0)}° / ${m.ext.topHip.toFixed(0)}°`, ok: null, reps: [] });
+    if (isNum(m.ext.leanBack)) rows.push({ key: 'extLean', label: '마무리 상체 뒤로', value: `${m.ext.leanBack.toFixed(0)}°`, ok: null, reps: [] });
   }
   const kl = m.knee3D.L, kr = m.knee3D.R;
   if (isNum(kl) || isNum(kr)) rows.push({ key: 'knee3D', label: '무릎 각도', value: `${isNum(kl) ? kl.toFixed(0) : '–'}° / ${isNum(kr) ? kr.toFixed(0) : '–'}°`, ok: null, reps: [] });

@@ -25,6 +25,11 @@ export const UPPER_THRESHOLDS = {
     //   키핑하면 최대 엉덩이 각도가 평균 48.8° 커짐 [논문 51]
     //   처음엔 30°였으나 실제 측면 친업 영상의 일반 반복이 26–32°로 나와 경계에 걸림 → 40°
     kipHip: 40,
+    // 평균 엉덩이 굽힘이 40° 넘으면 '많이 굽힘'(참고). 통제된 기준 실행 범위 13.5–40.1°의 위 끝 [논문 57]
+    hipFlexMax: 40,
+    // 첫 반복보다 마지막 반복의 엉덩이 각도 변화 폭이 15° 넘게 커지면 '다리 흔들림 증가'(참고) [초깃값].
+    //   지치면 다리 흔들림을 키워 반복을 마무리하는 보상 동작이 나타남 [논문 57]
+    legTrend: 15,
     // 내려오는 시간 0.7초 미만이면 '툭 떨어짐' [초깃값]
     fastLower: 0.7,
   },
@@ -49,6 +54,7 @@ export const UPPER_REFS = {
   mckenzieF: 'McKenzie 외 (2022, 피로)',
   mckenzieV: 'McKenzie 외 (2022, 벤치·바·링)',
   prinold: 'Prinold & Bull (2016)',
+  garavaglia: 'Garavaglia 외 (2024)',
 };
 
 const angleFromDown = (v, f) => Math.atan2(f * v.x, v.y) * DEG; // 아래 방향 0°, 앞쪽 +
@@ -57,7 +63,7 @@ const wrapShoulder = (a) => { let x = a; while (x >= 240) x -= 360; while (x < -
 function pts(lm, K, W, H) {
   if (!lm) return null;
   const g = (i) => { const p = lm[i]; return p && visOf(p) >= VIS_MIN ? { x: p.x * W, y: p.y * H } : null; };
-  const o = { shoulder: g(K.shoulder), elbow: g(K.elbow), wrist: g(K.wrist), hip: g(K.hip), knee: g(K.knee), ear: g(K.ear), nose: g(K.nose) };
+  const o = { shoulder: g(K.shoulder), elbow: g(K.elbow), wrist: g(K.wrist), hip: g(K.hip), knee: g(K.knee), ankle: g(K.ankle), ear: g(K.ear), nose: g(K.nose) };
   const mouth = [g(9), g(10)].filter(Boolean);
   o.mouth = mouth.length ? { x: mean(mouth.map((m) => m.x)), y: mean(mouth.map((m) => m.y)) } : null;
   o.ok = !!(o.shoulder && o.elbow && o.wrist && o.hip);
@@ -111,7 +117,7 @@ export function analyzeUpper({ frames, width, height }, exId, { referenceId, loa
   const facing = isNum(fm) && Math.abs(fm) > 1 ? (fm > 0 ? 1 : -1) : detectFacing([]);
 
   const raw = Object.fromEntries([...SERIES_KEYS, ...UPPER_KEYS].map((k) => [k, new Array(n).fill(NaN)]));
-  const lens = { forearm: [], upperArm: [], torso: [], neck: [] };
+  const lens = { forearm: [], upperArm: [], torso: [], neck: [], thigh: [], shin: [] };
   // 팔 길이가 평소와 크게 다르면 팔 관절점이 잘못 잡힌 프레임으로 본다.
   // 실제 영상: 친업 꼭대기에서 손·팔꿈치가 화면 위 가장자리에 걸려 아래팔이 평소의 10–60%로 줄고, 팔꿈치 각도가 튀어 한 반복이 둘로 나뉨
   const armBad = badLengths(P, n);
@@ -127,6 +133,8 @@ export function analyzeUpper({ frames, width, height }, exId, { referenceId, loa
     const torso = dist(p.hip, p.shoulder);
     lens.torso.push(torso);
     if (p.ear) lens.neck.push(dist(p.shoulder, p.ear));
+    if (p.knee) lens.thigh.push(dist(p.hip, p.knee));
+    if (p.knee && p.ankle) lens.shin.push(dist(p.knee, p.ankle));
     if (armBad[i]) return; // 팔에 의존하는 값은 비워 두고 앞뒤 프레임으로 메운다
     raw.elbow[i] = a.elbow; raw.shoulder[i] = a.shoulder;
     raw.wristX[i] = p.wrist.x; raw.wristY[i] = p.wrist.y;
@@ -150,7 +158,9 @@ export function analyzeUpper({ frames, width, height }, exId, { referenceId, loa
   const body = {
     forearm: median(lens.forearm), upperArm: median(lens.upperArm), torso,
     neck: median(lens.neck) || torso * 0.3, facing, side, kind: 'upper',
-    shin: NaN, thigh: NaN,
+    // 다리 길이: 기준 자세에 다리까지 그릴 때 씀 (안 보이면 NaN → 다리 생략)
+    thigh: lens.thigh.length >= valid * 0.5 ? median(lens.thigh) : NaN,
+    shin: lens.shin.length >= valid * 0.5 ? median(lens.shin) : NaN,
   };
 
   const rawReps = valid >= 3 ? segmentReps(s.elbow, t, { drop: cfg.repDrop, rise: cfg.repRise }) : [];
@@ -201,6 +211,8 @@ function upperMetrics(exId, r, s, t, hipSeen) {
     maxTrunk: rangeMax(s.trunk, start, end),
     reach: rangeMax(s.mouthRel, start, end),
     hipRange: hipSeen ? rangeMax(s.hip, start, end) - rangeMin(s.hip, start, end) : NaN,
+    // 평균 엉덩이 굽힘 (0 = 일자) — 논문 57 의 '평균 절대 엉덩이 굽힘'과 같은 정의
+    hipFlex: hipSeen ? 180 - mean(s.hip.slice(start, end + 1)) : NaN,
     down: r.partialStart ? NaN : t[b] - t[start], // 친업: 당기기 · 딥스: 내려가기
     up: r.partialEnd ? NaN : t[end] - t[b], //       친업: 내려오기 · 딥스: 밀어 올리기
   };
@@ -212,7 +224,7 @@ function summarizeUpper(reps) {
     reps: reps.length,
     minElbow: m('minElbow'), flex: m('flex'), topElbow: m('topElbow'),
     shoulderExt: m('shoulderExt'), maxShoulder: m('maxShoulder'), maxTrunk: m('maxTrunk'),
-    reach: m('reach'), hipRange: m('hipRange'), down: m('down'), up: m('up'),
+    reach: m('reach'), hipRange: m('hipRange'), hipFlex: m('hipFlex'), down: m('down'), up: m('up'),
     meanAbsDiff: mean(reps.map((r) => r.meanAbsDiff)),
   };
 }
@@ -239,6 +251,12 @@ const UPPER_RULES = {
       when: (m) => m.hipRange > T.kipHip,
       title: '몸 반동을 써요',
       detail: (hit) => `한 반복 안에서 엉덩이 각도가 평균 ${deg(avgOf(hit, 'hipRange'))} 바뀌어요. 반동(키핑)을 쓰면 다리·몸통이 함께 일해 팔·등 근육 활성이 낮아진다는 연구가 있어요. 팔·등 근력이 목표라면 몸을 곧게 고정하세요.`,
+    },
+    {
+      id: 'cu-hip-flex', level: 'info', group: 'body', ref: UPPER_REFS.garavaglia,
+      when: (m) => m.hipFlex > T.hipFlexMax,
+      title: '엉덩이를 많이 굽혀요 (참고)',
+      detail: (hit) => `반복 중 엉덩이가 평균 ${deg(avgOf(hit, 'hipFlex'))} 굽혀져 다리가 앞으로 들려 있어요. 통제된 기준 동작에서는 평균 약 14–40°였어요. 엉덩이·무릎을 살짝만 굽히고 배에 힘을 줘 고정해 보세요.`,
     },
     {
       id: 'cu-fast-lower', level: 'info', group: 'tempo',
@@ -308,6 +326,19 @@ export function evaluateUpper(exId, reps, { load = null } = {}) {
           detail: `처음 2회보다 마지막 2회에서 위 자세 팔꿈치가 ${deg(first - last)} 덜 펴져요. 지치면 위 자세에서 덜 펴진다는 연구가 있어요. 반복 수나 보조 무게를 조절해 보세요.`,
           reps: reps.slice(-2).map((r) => r.index), count: 2 });
         fired.add('lockout');
+      }
+    }
+  }
+  // 친업: 반복할수록 다리 흔들림이 커지는지 (지칠 때 보상 동작) [논문 57]
+  if (exId === 'chinup') {
+    const full = reps.filter((r) => isNum(r.metrics.hipRange) && !r.partialStart && !r.partialEnd);
+    if (full.length >= 3) {
+      const grow = full.at(-1).metrics.hipRange - full[0].metrics.hipRange;
+      if (grow > T.legTrend && !fired.has('swing')) {
+        push({ id: 'cu-leg-trend', level: 'info', group: 'swing', ref: UPPER_REFS.garavaglia, title: '반복할수록 다리 흔들림이 커져요 (참고)',
+          detail: `첫 반복보다 마지막 반복에서 엉덩이 각도 변화가 ${deg(grow)} 커졌어요. 지치면 다리를 흔들어 반동으로 마무리하는 보상 동작이 나온다는 연구가 있어요. 보조 무게를 늘리거나 반복 수를 줄여 보세요.`,
+          reps: [full.at(-1).index], count: 1 });
+        fired.add('swing');
       }
     }
   }

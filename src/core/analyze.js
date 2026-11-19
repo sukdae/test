@@ -5,14 +5,14 @@
 
 import { SIDES, toPoints, detectFacing, visOf, frameSides } from './landmarks.js';
 import { leanFromVertical, dist, kneeAngle, hipAngle } from './geometry.js';
-import { fillGaps, smooth, median, percentile, mean, std, isNum, rangeMin, rangeMax, argmin } from './signal.js';
+import { fillGaps, smooth, median, percentile, mean, std, isNum, rangeMin, rangeMax, argmin, derivative } from './signal.js';
 import { segmentReps } from './reps.js';
 import { alignRep, topDiffs } from './compare.js';
 import { analyzeUpper } from './upper.js';
 import { evaluateFeedback } from './feedback.js';
 import { estimateMuscles } from './muscles.js';
 import { EXERCISES, getReference } from './exercises.js';
-import { tempoOf, cleanReps, bottomPause } from './reference.js';
+import { tempoOf, cleanReps, bottomPause, repRhythm } from './reference.js';
 import { backCurvature } from './back.js';
 
 export const SERIES_KEYS = ['knee', 'hip', 'trunk', 'shin', 'thigh', 'hipX', 'hipY', 'kneeX', 'kneeY', 'midX', 'heelRel', 'ankleX', 'ankleY', 'backCurv', 'comB'];
@@ -152,6 +152,9 @@ export function analyzeSession({ frames, width, height }, exId, { referenceId, l
   let bigWin = Math.max(5, Math.round(fps * 0.6));
   if (bigWin % 2 === 0) bigWin++;
   const trunkTrend = smooth(s.trunk, bigWin);
+  // 관절 각속도(°/s, + = 펴지는 중). 올라올 때 무릎·엉덩이가 펴지는 순서·속도를 본다 [논문 22, 64]
+  s.kneeVel = derivative(s.knee, t);
+  s.hipVel = derivative(s.hip, t);
   // 등 곡률 변화: 서 있는 구간(기준 신호가 꼭대기 근처)의 곡률을 0으로 둔다.
   const sigTop = percentile(s[cfg.repSignal], 0.9);
   const backBase = median(s.backCurv.filter((v, i) => s[cfg.repSignal][i] >= sigTop - 8));
@@ -249,6 +252,39 @@ function repMetrics(r, s, t, legLen, heelBase, trunkTrend) {
     // 최저점 앞뒤 구간의 중앙값: 원판에 정강이가 가려 무릎점이 순간적으로 튀는 영향을 줄인다(실제 측면 데드리프트 영상)
     kneeAtBottom: backAtBottom(s.knee, r),
     withBar: false,
+    ...extensionMetrics(r, s, t),
+  };
+}
+
+// 올라오는 구간의 펴짐(신전) 지표
+//   진행도 = (지금 각도 − 최저점 각도) / (최고점 각도 − 최저점 각도), 0 → 1
+//   extLead = 올라오는 구간 앞 40% 동안 (무릎 진행도 − 엉덩이 진행도)의 평균. + = 무릎이 먼저 펴짐(엉덩이가 먼저 올라옴), − = 엉덩이가 먼저 펴짐
+//   스쿼트는 엉덩이·무릎이 함께 펴지고, 데드리프트는 무릎 → 엉덩이 순서로 펴짐 [논문 22, 64]
+//   '함께'로 볼 범위 ±0.04 는 논문에 수치가 없어 [초깃값]: 기준 자세로 만든 값이 스쿼트 0.00, 데드리프트(3단계 키프레임) 0.05라 그 사이
+export const EXT_TOGETHER = 0.04;
+export const EXT_EARLY = 0.4; // [초깃값]
+function extensionMetrics(r, s, t) {
+  const { bottom: b, end } = r;
+  const nan = { kneePeakVel: NaN, hipPeakVel: NaN, kneePeakAt: NaN, hipPeakAt: NaN, extLead: NaN, extOrder: '', topKnee: NaN, leanBack: NaN, backArchTop: NaN };
+  if (r.partialEnd || !(end > b + 2)) return nan;
+  const k0 = s.knee[b], h0 = s.hip[b], k1 = rangeMax(s.knee, b, end), h1 = rangeMax(s.hip, b, end);
+  if (!(k1 - k0 > 10 && h1 - h0 > 10)) return nan;
+  const prog = (v, lo, hi) => Math.max(0, Math.min(1, (v - lo) / (hi - lo)));
+  // 올라오는 구간의 앞 40%만 본다: 데드리프트 1단계(무릎 위주로 펴짐)가 이 구간이고, 뒤에서는 엉덩이가 따라잡아 평균이 0에 가까워짐 [논문 22]
+  const diffs = [], tCut = t[b] + EXT_EARLY * (t[end] - t[b]);
+  for (let i = b; i <= end && t[i] <= tCut; i++) if (isNum(s.knee[i]) && isNum(s.hip[i])) diffs.push(prog(s.knee[i], k0, k1) - prog(s.hip[i], h0, h1));
+  const peak = (v) => { let m = -Infinity, at = b; for (let i = b; i <= end; i++) if (isNum(v[i]) && v[i] > m) { m = v[i]; at = i; } return [m, (t[at] - t[b]) / ((t[end] - t[b]) || 1)]; };
+  const [kv, ka] = peak(s.kneeVel), [hv, ha] = peak(s.hipVel);
+  const lead = mean(diffs);
+  // 끝 자세(마무리) 앞뒤 구간: 상체가 뒤로 넘어간 정도(+ = 뒤로), 등 윤곽 젖힘(실험, − = 젖혀짐)
+  const w = Math.max(2, Math.round((end - b) * 0.2));
+  return {
+    kneePeakVel: kv, hipPeakVel: hv, kneePeakAt: ka, hipPeakAt: ha,
+    extLead: lead,
+    extOrder: !isNum(lead) ? '' : lead > EXT_TOGETHER ? 'knee-first' : lead < -EXT_TOGETHER ? 'hip-first' : 'together',
+    topKnee: k1,
+    leanBack: Math.max(0, -rangeMin(s.trunk, Math.max(b, end - w), end)),
+    backArchTop: rangeMin(s.backDelta || [], Math.max(b, end - w), end),
   };
 }
 
@@ -315,14 +351,34 @@ function qualityWarnings({ coverage, frames, width, torso, reps, duration, n }) 
 }
 
 // CSV (0단계 검증용: 수동 측정값과 비교)
+//   1부: 프레임별 각도. 2부: 반복별 리듬(내려가기·바닥 멈춤·올라오기 초, 기준 범위 판정)
 export function toCSV(result) {
   const { t, series: s, reps } = result;
+  const upper = EXERCISES[result.exercise]?.kind === 'upper';
   const repOf = new Array(t.length).fill('');
   for (const r of reps) for (let k = r.start; k <= r.end; k++) repOf[k] = r.index;
-  const f = (v) => (isNum(v) ? v.toFixed(1) : '');
-  const rows = ['frame,time_s,knee_deg,hip_deg,trunk_lean_deg,shin_lean_deg,back_curv_change_pct,detected,rep'];
+  const f = (v, d = 1) => (isNum(v) ? v.toFixed(d) : '');
+  const cols = upper
+    ? [['elbow_deg', 'elbow'], ['shoulder_deg', 'shoulder'], ['trunk_lean_deg', 'trunk'], ['hip_deg', 'hip']]
+    : [['knee_deg', 'knee'], ['hip_deg', 'hip'], ['trunk_lean_deg', 'trunk'], ['shin_lean_deg', 'shin'], ['back_curv_change_pct', 'backDelta'], ['knee_ext_vel_dps', 'kneeVel'], ['hip_ext_vel_dps', 'hipVel']];
+  const rows = [['frame', 'time_s', ...cols.map(([h]) => h), 'detected', 'rep'].join(',')];
   t.forEach((time, i) => {
-    rows.push([i, time.toFixed(3), f(s.knee[i]), f(s.hip[i]), f(s.trunk[i]), f(s.shin[i]), f(s.backDelta?.[i]), result.frames[i]?.lm ? 1 : 0, repOf[i]].join(','));
+    rows.push([i, time.toFixed(3), ...cols.map(([, k]) => f(s[k]?.[i])), result.frames[i]?.lm ? 1 : 0, repOf[i]].join(','));
   });
+  // 반복별 리듬
+  const ref = getReference(result.exercise, result.reference?.id)?.tempo || null;
+  const chin = result.exercise === 'chinup';
+  rows.push('');
+  rows.push(`rhythm,${chin ? 'down_s = 당기기, up_s = 내려오기' : 'down_s = 내려가기, up_s = 올라오기'}${ref?.descentRange ? `, 기준 내려가기 ${ref.descentRange[0]}-${ref.descentRange[1]}s · 올라오기 ${ref.ascentMax}s 이하` : ''}`);
+  // 펴짐(신전): 올라올 때 무릎·엉덩이 최대 각속도와 그 시점(올라오기 구간의 %), 펴지는 순서, 마무리 각도, 상체 뒤로 젖힘, 등 젖힘(실험)
+  const ext = !upper;
+  const extHead = ext ? ',knee_peak_ext_vel_dps,hip_peak_ext_vel_dps,knee_peak_at_pct,hip_peak_at_pct,ext_lead,ext_order,top_knee_deg,top_hip_deg,lean_back_deg,back_arch_top_pct' : '';
+  rows.push('rep,start_s,bottom_s,end_s,down_s,bottom_pause_s,up_s,partial,down_check,up_check' + extHead);
+  repRhythm(result, ref).forEach((r, k) => {
+    const m = reps[k]?.metrics || {};
+    const extCols = ext ? [f(m.kneePeakVel, 0), f(m.hipPeakVel, 0), f(m.kneePeakAt * 100, 0), f(m.hipPeakAt * 100, 0), f(m.extLead, 2), m.extOrder || '', f(m.topKnee), f(m.topHip), f(m.leanBack), f(m.backArchTop)] : [];
+    rows.push([r.rep, f(r.start, 2), f(r.bottom, 2), f(r.end, 2), f(r.down, 2), f(r.pause, 2), f(r.up, 2), r.partial ? 1 : 0, r.downCheck, r.upCheck, ...extCols].join(','));
+  });
+  if (ext) rows.push(`ext_order,together = 함께 펴짐 · knee-first = 무릎 먼저(엉덩이가 먼저 올라옴) · hip-first = 엉덩이 먼저 · 기준: ${result.exercise === 'deadlift' ? '무릎 → 엉덩이 순서' : '함께 펴짐'} (Hales 외 2026)`);
   return rows.join('\n');
 }
