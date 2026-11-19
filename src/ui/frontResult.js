@@ -6,6 +6,7 @@ import { buildCoaching } from '../core/coach.js';
 import { isNum } from '../core/signal.js';
 import { drawSkeleton, drawFrontOverlay, drawFrontBase, drawFrontMuscles, drawFrontGhost, heatColor, cssVar } from './draw.js';
 import { lineChart } from './charts.js';
+import { stabilizeFrames } from '../core/stabilize.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,6 +23,7 @@ export function disposeFrontResult() {
 }
 
 export function showFrontResult(fr, opts = {}) {
+  const shown = stabilizeFrames(fr.frames, fr.width, fr.height).frames || []; // 그림용 떨림 다듬기
   const { videoUrl = null, saved = false, demo = false, onSave, onAgain, coach: coachOverride = null, onSwitch = null, sideMuscles = null } = opts;
   disposeFrontResult();
   ac = new AbortController();
@@ -180,7 +182,7 @@ export function showFrontResult(fr, opts = {}) {
       lastKey = key;
       ctx.clearRect(0, 0, W, H);
       if (!videoUrl) { ctx.fillStyle = cssVar('--stage-bg'); ctx.fillRect(0, 0, W, H); }
-      const lm = fr.frames[i]?.lm;
+      const lm = shown[i]?.lm;
       if (showFM.checked) drawFrontMuscles(ctx, lm, fm, effortAt(i), W, H);
       if (showSkel.checked) drawSkeleton(ctx, lm, W, H);
       if (showGhost.checked) drawFrontGhost(ctx, lm, W, H);

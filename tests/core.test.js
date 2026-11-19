@@ -18,6 +18,7 @@ import { velocityAt, ascentMaxFor, intensityOf, velocityLoss, personalTempo } fr
 import { buildDatasetEntry, buildExport, packLandmarks, unpackLandmarks, countRepLabels } from '../src/core/dataset.js';
 import { QUESTIONS, figurePoints, surveyCSV, surveyJSON, summarize } from '../src/core/survey.js';
 import { upperChain } from '../src/core/geometry.js';
+import { stabilizeFrames } from '../src/core/stabilize.js';
 
 export const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -140,6 +141,25 @@ test('발목 점이 무릎 쪽으로 튀는 프레임(원판 가림)은 발목 �
   const worst = Math.max(...hit.map((i) => Math.abs(res.series.ankleY[i] - clean.series.ankleY[i])));
   assert(worst < 0.03 * demo.height, `ankle off ${worst.toFixed(1)}px`);
   assert(hit.every((i) => res.series.knee[i] > 150), 'knee at lockout should stay extended');
+});
+
+test('원판에 가려 어깨·팔꿈치 점이 몇 프레임 튀면 앞뒤 프레임으로 메움, 정상 움직임은 그대로', () => {
+  const clean = generateDemo('squat', { fps: 30, seed: 3 });
+  const demo = generateDemo('squat', { fps: 30, seed: 3 });
+  const { frames: same } = stabilizeFrames(demo.frames, demo.width, demo.height);
+  const drift = Math.max(...same.flatMap((f, i) => (f.lm ? [11, 12, 23, 24, 25, 26].map((j) => Math.abs(f.lm[j].y - clean.frames[i].lm[j].y)) : [0])));
+  assert(drift < 0.01, `정상 움직임이 바뀜 ${drift.toFixed(3)}`);
+  const hit = [];
+  for (let s0 = 20; s0 + 4 < demo.frames.length; s0 += 25) for (let i = s0; i < s0 + 4; i++) {
+    const f = demo.frames[i]; if (!f.lm) continue; hit.push(i);
+    for (const j of [11, 12, 13, 14]) { f.lm[j].x += 0.12; f.lm[j].y -= 0.08; }
+  }
+  const { frames: fixed } = stabilizeFrames(demo.frames, demo.width, demo.height);
+  const worst = Math.max(...hit.map((i) => Math.hypot(fixed[i].lm[11].x - clean.frames[i].lm[11].x, fixed[i].lm[11].y - clean.frames[i].lm[11].y)));
+  // 튄 거리 0.144 → 0.05 미만 (앞뒤 프레임 직선 보간이라 빠른 구간에선 조금 남음)
+  assert(hit.length > 10 && hit.every((i) => fixed[i].lm[11].fixed) && worst < 0.05, `어깨 오차 ${worst.toFixed(3)}`);
+  const a = analyzeSession(clean, 'squat'), b = analyzeSession(demo, 'squat');
+  assert(a.reps.length === b.reps.length, `reps ${b.reps.length} vs ${a.reps.length}`);
 });
 
 test('좌우 반전(왼쪽을 보는 사람)도 같은 결과', () => {

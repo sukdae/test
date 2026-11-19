@@ -13,6 +13,7 @@ import { toCSV } from '../core/analyze.js';
 import { isNum, mean, median, percentile, clamp } from '../core/signal.js';
 import { drawSkeleton, drawGhost, drawGhostUpper, drawMuscles, drawFootContact, drawBalance, drawBackLine, FOOT_LIFT_WARN, muscleSVG, heatColor, cssVar } from './draw.js';
 import { lineChart } from './charts.js';
+import { stabilizeFrames } from '../core/stabilize.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -32,6 +33,8 @@ export function disposeResult() {
 }
 
 export function showResult(result, opts = {}) {
+  // 뼈대·근육 그림은 떨림을 다듬은 관절점으로 그린다(분석 값은 그대로). 원판에 가린 어깨·팔이 튀어 보이지 않게.
+  const shown = stabilizeFrames(result.frames, result.width, result.height).frames || [];
   const { videoUrl = null, saved = false, demo = false, onSave, onAgain, startTime = null, coach: coachOverride = null, onSwitch = null } = opts;
   disposeFrontResult();
   disposeResult();
@@ -288,7 +291,7 @@ export function showResult(result, opts = {}) {
       lastDrawn = key;
       ctx.clearRect(0, 0, W, H);
       if (!videoUrl) { ctx.fillStyle = cssVar('--stage-bg'); ctx.fillRect(0, 0, W, H); drawFloor(ctx, W, H, s.ankleY[i]); }
-      if (showMuscle.checked) drawMuscles(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, result.facings?.[i] || result.facing, result.muscles, effortAt(i), W, H);
+      if (showMuscle.checked) drawMuscles(ctx, shown[i]?.lm, result.sides?.[i] || result.side, result.facings?.[i] || result.facing, result.muscles, effortAt(i), W, H);
       if (showGhost.checked) {
         const r = repAt(i);
         const tempoMode = ghostMode.value === 'tempo' && result.reference?.tempo;
@@ -296,9 +299,9 @@ export function showResult(result, opts = {}) {
         if (upper) drawGhostUpper(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, body, W, H);
         else drawGhost(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, result.facings ? { ...body, facing: result.facings[i] } : body, W, H, refProfile);
       }
-      if (showFeet.checked && !upper) { if (result.exercise !== 'deadlift') drawFootContact(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || (result.load?.barKg > 0 && result.load?.bodyKg > 0)) drawBalance(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
-      if (showBack.checked && !upper && !result.backBlocked) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
-      if (showSkel.checked) drawSkeleton(ctx, result.frames[i]?.lm, W, H, { side: result.sides?.[i] || result.side, labels: upper ? { elbow: s.elbow[i] } : { knee: s.knee[i], hip: s.hip[i] } });
+      if (showFeet.checked && !upper) { if (result.exercise !== 'deadlift') drawFootContact(ctx, shown[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || (result.load?.barKg > 0 && result.load?.bodyKg > 0)) drawBalance(ctx, shown[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
+      if (showBack.checked && !upper && !result.backBlocked) drawBackLine(ctx, result.frames[i]?.back, shown[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
+      if (showSkel.checked) drawSkeleton(ctx, shown[i]?.lm, W, H, { side: result.sides?.[i] || result.side, labels: upper ? { elbow: s.elbow[i] } : { knee: s.knee[i], hip: s.hip[i] } });
       $('seek').value = String(Math.round(((time - T0) / (T1 - T0 || 1)) * 1000));
     }
     if (more.open && now - lastTl > 120) { lastTl = now; renderTimeline(time); }

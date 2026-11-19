@@ -9,6 +9,7 @@ import { bottomPause, cleanReps } from './reference.js';
 import { dist, DEG } from './geometry.js';
 import { visOf } from './landmarks.js';
 import { idealFront } from './exercises.js';
+import { stabilizeFrames } from './stabilize.js';
 
 const L = { shoulder: 11, hip: 23, knee: 25, ankle: 27, heel: 29, foot: 31 };
 const R = { shoulder: 12, hip: 24, knee: 26, ankle: 28, heel: 30, foot: 32 };
@@ -49,6 +50,7 @@ export function inward(hip, knee, ankle, midX) {
 }
 
 export function analyzeFront({ frames, width: W, height: H }, exId) {
+  frames = stabilizeFrames(frames, W, H, { smooth: false }).frames; // 순간 튄 관절점 보정(stabilize.js)
   const n = frames.length;
   const t = frames.map((f) => f.t);
   const raw = Object.fromEntries(SERIES.map((k) => [k, new Array(n).fill(NaN)]));

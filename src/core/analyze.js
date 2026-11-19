@@ -15,6 +15,7 @@ import { estimateMuscles } from './muscles.js';
 import { EXERCISES, getReference } from './exercises.js';
 import { tempoOf, cleanReps, bottomPause, repRhythm } from './reference.js';
 import { backCurvature, backOccluded } from './back.js';
+import { stabilizeFrames } from './stabilize.js';
 
 export const SERIES_KEYS = ['knee', 'hip', 'trunk', 'shin', 'thigh', 'hipX', 'hipY', 'kneeX', 'kneeY', 'midX', 'heelRel', 'ankleX', 'ankleY', 'backCurv', 'comB'];
 
@@ -55,6 +56,8 @@ export const SHIN_OK = [0.7, 1.4];
 const SHIN_NEAR = 0.1;
 
 export function analyzeSession({ frames, width, height }, exId, { referenceId, load: load0 = null } = {}) {
+  // 원판에 가려 순간적으로 튄 관절점은 앞뒤 프레임으로 메운다(stabilize.js). 떨림 다듬기는 화면 표시에서만(result.js).
+  frames = stabilizeFrames(frames, width, height, { smooth: false }).frames;
   const load = cleanLoad(load0);
   const cfg = EXERCISES[exId];
   if (!cfg) throw new Error(`알 수 없는 종목: ${exId}`);
