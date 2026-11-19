@@ -62,16 +62,23 @@
     <div class="load-row" aria-label="무게 (선택)">
       <label>몸무게 <input type="number" id="bodyKg" inputmode="decimal" min="20" max="300" step="0.5" placeholder="선택"> kg</label>
       <label><span id="barLabel">바벨</span> <input type="number" id="barKg" inputmode="decimal" min="0" max="600" step="0.5" placeholder="맨몸 0"> kg</label>
+      <label id="oneRMLabel" title="한 번에 들 수 있는 최대 무게. 넣으면 무게에 맞춰 리듬 기준을 바꿔요">1RM <input type="number" id="oneRM" inputmode="decimal" min="1" max="600" step="0.5" placeholder="선택"> kg</label>
     </div>
     <div class="actions">
       <button id="recordBtn" class="btn primary">● 촬영</button>
       <label class="btn">영상 불러오기<input type="file" accept="video/*" id="fileInput" multiple hidden></label>
     </div>
     <button id="demoBtn" class="link block-center">예시 보기</button>
+    <button id="surveyOpen" class="link block-center muted-link">현장 설문 (촬영 없음)</button>
     <div id="recentBlock" hidden>
       <div class="row-head"><h2>최근 기록</h2><button id="historyBtn" class="link">전체</button></div>
       <div id="recentList" class="session-list"></div>
     </div>
+  </section>
+
+  <!-- 현장 설문 (촬영 없음) -->
+  <section id="view-survey" class="view" hidden>
+    <div id="surveyBox" class="card survey-card"></div>
   </section>
 
   <!-- 촬영 -->
@@ -205,6 +212,17 @@
           <button id="missedSave" class="btn">기록</button>
         </div>
       </details>
+      <details id="repJudge" class="missed" hidden>
+        <summary>회차별 판정 (학습용) <small id="rjCount" class="muted"></small></summary>
+        <div class="rep-judge">
+          <p class="sub">회차를 고르고, 보이는 실수를 모두 체크한 뒤 기록하세요. 실수가 없으면 '문제 없음'.</p>
+          <div id="rjReps" class="chips" role="tablist" aria-label="판정할 회차"></div>
+          <div id="rjIssues" class="rj-issues"></div>
+          <input id="rjNote" type="text" placeholder="메모 (선택)" aria-label="메모">
+          <label class="rj-consent"><input type="checkbox" id="rjConsent"> 영상 속 사람에게 <b>학습용 사용 동의</b>를 받았어요 <small>(관절점 숫자만 저장 · 영상·이름 없음)</small></label>
+          <div class="rj-actions"><button id="rjOk" class="btn">이 회차 문제 없음</button><button id="rjSave" class="btn primary">체크한 실수로 기록</button></div>
+        </div>
+      </details>
 
       <div class="side-only">
         <h2>각도 곡선 비교</h2>
@@ -256,6 +274,14 @@
         <select id="setRater"><option value="">선택 안 함</option><option>트레이너</option><option>체대생</option><option>본인</option><option>기타</option></select></label>
       <p id="labelInfo" class="sub"></p>
       <button id="exportLabels" class="btn">평가 기록 CSV 내보내기</button>
+    </div>
+    <div class="card">
+      <p><b>설문·학습용 데이터</b><br><small>현장 설문(촬영 없음)에서 참여자가 정한 기준선과, 트레이너 회차별 판정 데이터예요. 영상·이름·얼굴은 없어요. 엑셀로 볼 때는 CSV, 기준값 분석에는 JSON을 써요.</small></p>
+      <p id="datasetInfo" class="sub"></p>
+      <button id="exportSurvey" class="btn">설문 결과 내보내기 (엑셀 CSV)</button>
+      <button id="exportSurveyJson" class="btn">설문 결과 내보내기 (분석용 JSON)</button>
+      <button id="exportDataset" class="btn">학습용 데이터 내보내기 (JSON)</button>
+      <button id="clearDataset" class="btn danger">학습용 데이터 삭제</button>
     </div>
     <div class="card">
       <button id="replayOnboarding" class="btn">촬영 가이드 다시 보기</button>

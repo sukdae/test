@@ -21,6 +21,8 @@
   - `back.js` 세그멘테이션 마스크로 등 곡률(실험), `geometry.js`/`signal.js`/`landmarks.js` 유틸, `synthetic.js` 측면·정면 합성 데모
 - `src/ui/` — 브라우저 전용: `pose.js`(MediaPipe 래퍼, 유일한 인식 계층), `process.js`(영상→프레임), `capture.js`(카메라), `result.js`(측면 결과), `frontResult.js`(정면 결과), `versus.js`(나 vs 기준 표), `draw.js`(오버레이·근육 도식), `charts.js`, `history.js`, `storage.js`(IndexedDB+localStorage)
 - `src/ui/judge.js` 판정 평가(맞아요/틀렸어요/놓친 실수) → localStorage `formcheck-labels`, 설정에서 CSV 내보내기
+- 현장 설문(촬영 없음): 문항·인형 자세·CSV/JSON `src/core/survey.js`(`QUESTIONS` 의 app 값은 앱 기준값과 같이 유지), 화면 `src/ui/survey.js`(view-survey, localStorage `formcheck-survey2`)
+- 학습용 데이터: `src/core/dataset.js`(`buildDatasetEntry`/`buildExport`, 관절점 99개/프레임 반올림), IndexedDB `dataset` 스토어(DB v2, `storage.js`), 회차별 판정 `verdict: 'rep'`(judge.js). 분석 `tools/fit_thresholds.py`(표준 라이브러리, `RULES` 는 앱 기준값과 같이 유지). 영상·이름은 절대 넣지 않음
 - `src/app.js` 화면 전환. 촬영 방향 `state.mode` = side/front/both, 둘 다는 `state.pair`로 측면→정면 순서.
 - `index.html` 모든 화면(section `view-*`). 결과 화면은 `data-view=side|front`로 `.side-only`/`.front-only` 전환.
 - `docs/참고문헌.md` 확인된 논문 목록과 앱 반영 내역.

@@ -61,9 +61,19 @@ export function measureTrunkEdges(sample, mw, mh, lm) {
 // 등 쪽 가장자리: 앞쪽 법선 = facing·n 이므로 등 쪽은 facing=1 일 때 minus
 const backEdges = (back, facing) => (facing === 1 ? back.minus : back.plus);
 
+// 원판·바가 등을 가린 프레임: 사람 윤곽(마스크)에 원판이 함께 잡혀, 위쪽 등 가장자리가 몸통 축에서 사람 등으로는
+// 나올 수 없을 만큼 멀어진다. 실제 영상: 원판 없음 0.22–0.25, 바벨 스쿼트(원판이 어깨 뒤) 0.38–0.42 (몸통 길이 대비).
+// 몸통 위쪽 절반(엉덩이→어깨 0.55 이상)에서 0.32 를 넘으면 가려진 것으로 본다 [초깃값]
+export const BACK_OCCLUDED = 0.32;
+export function backOccluded(back, facing) {
+  if (!back) return false;
+  const e = backEdges(back, facing);
+  return BACK_LEVELS.some((t, j) => t >= 0.55 && typeof e[j] === 'number' && e[j] > BACK_OCCLUDED);
+}
+
 // 곡률 지수: 등 윤곽선의 내부 점들이 양 끝을 잇는 현보다 바깥(+)/안쪽(−)에 있는 평균 거리, 몸통 길이 대비 %
 export function backCurvature(back, facing) {
-  if (!back) return NaN;
+  if (!back || backOccluded(back, facing)) return NaN;
   const e = backEdges(back, facing);
   const pts = BACK_LEVELS.map((t, j) => [t, e[j]]).filter(([, v]) => typeof v === 'number');
   if (pts.length < 5) return NaN;
@@ -80,7 +90,7 @@ export function backCurvature(back, facing) {
 // 영상 위에 그릴 등 윤곽 점들 (픽셀)
 export function backPoints(back, lm, W, H, facing) {
   const ax = trunkAxis(lm, W, H);
-  if (!ax || !back) return null;
+  if (!ax || !back || backOccluded(back, facing)) return null;
   const e = backEdges(back, facing);
   const sgn = facing === 1 ? -1 : 1;
   const out = [];

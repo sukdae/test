@@ -199,7 +199,7 @@ export function trunkTibiaBias(reps) {
 
 export function evaluateFeedback(exId, reps, { load = null } = {}) {
   // 데드리프트 무게중심은 바벨 무게를 입력했을 때만 판정 (몸만의 무게중심은 바벨 때문에 뒤로 가는 게 정상)
-  const dlBalance = exId === 'deadlift' && load?.barKg > 0;
+  const dlBalance = exId === 'deadlift' && load?.barKg > 0 && load?.bodyKg > 0;
   if (!reps.length) return [];
   const T = THRESHOLDS[exId];
   const items = [];

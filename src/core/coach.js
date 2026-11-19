@@ -97,9 +97,20 @@ export function buildCoaching(result, { max = 3 } = {}) {
     else if (mt.descent <= hi + 0.5) good.push(`내려가기 ${range}`);
   }
   if (label && rt && isNum(mt.ascent) && isNum(rt.ascent)) {
-    const max = rt.ascentMax ?? rt.ascent + 0.3;
-    if (mt.ascent > max) actions.push({ text: '바닥을 더 힘차게 밀며 올라오세요', tag: `${label} 약 ${rt.ascent.toFixed(0)}초 · 나 ${mt.ascent.toFixed(1)}초`, kind: 'pro', prio: 2 });
-    else good.push('힘차게 올라옴');
+    // 무거운 세트는 올라오기가 느려지는 게 정상 → 강도(%1RM)에 맞춰 늘린 상한을 쓴다 (rhythm.js) [논문 65, 66]
+    const rh = result.rhythm || {};
+    const max = isNum(rh.ascentMax) ? rh.ascentMax : rt.ascentMax ?? rt.ascent + 0.3;
+    const why = isNum(rh.pct) && rh.pct > 70 ? ` (${rh.pct.toFixed(0)}%1RM 기준 ${max.toFixed(1)}초까지 정상)` : '';
+    if (mt.ascent > max) actions.push({ text: '바닥을 더 힘차게 밀며 올라오세요', tag: `${label} ${max.toFixed(1)}초 이하 · 나 ${mt.ascent.toFixed(1)}초${why}`, kind: 'pro', prio: 2 });
+    else good.push(isNum(rh.pct) && rh.pct > 70 ? `무게(${rh.pct.toFixed(0)}%) 대비 힘차게 올라옴` : '힘차게 올라옴');
+  }
+  // 평소 나(같은 무게)와 비교: 행동 지시가 아니라 칩으로만
+  const pt = result.personal;
+  if (pt && isNum(pt.ascent) && isNum(mt.ascent) && pt.ascent > 0) {
+    const d = (mt.ascent / pt.ascent - 1) * 100;
+    if (d > 20) good.push(`평소보다 올라오기 ${Math.round(d)}% 느림`);
+    else if (d < -10) good.push(`평소보다 올라오기 ${Math.round(-d)}% 빠름`);
+    else good.push('평소 리듬과 비슷');
   }
   // 바닥 멈춤 시간은 논문 근거가 없고 측정도 불안정해 행동 지시로 쓰지 않는다(비교표에만 표시).
 

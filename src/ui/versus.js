@@ -62,7 +62,18 @@ export function renderVersus(el, result, profile) {
       rows.push(`<tr><th>내려가기<small>논문 2–4초</small></th><td>${fmtSec(mt.descent)}</td><td>${lo}–${hi}초</td><td class="diff ${!isNum(mt.descent) ? '' : inR ? 'same' : 'off'}">${!isNum(mt.descent) ? '–' : inR ? '범위 안 ✓' : mt.descent < lo ? `${(lo - mt.descent).toFixed(1)}초 빠름` : `${(mt.descent - hi).toFixed(1)}초 느림`}</td></tr>`);
     } else row('내려가기', mt.descent, rt.descent, fmtSec, { unit: '초' });
     row('바닥에서 멈춤', mt.bottom, rt.bottom, fmtSec, { unit: '초' });
-    row('올라오기', mt.ascent, rt.ascent, fmtSec, { unit: '초' });
+    const rh = result.rhythm || {};
+    if (isNum(rh.ascentMax)) {
+      const ok = isNum(mt.ascent) && mt.ascent <= rh.ascentMax;
+      const sub = isNum(rh.pct) ? `${Math.round(rh.pct)}%1RM 반영` : '1RM 넣으면 무게 반영';
+      rows.push(`<tr><th>올라오기<small>${sub}</small></th><td>${fmtSec(mt.ascent)}</td><td>${rh.ascentMax.toFixed(1)}초 이하</td><td class="diff ${!isNum(mt.ascent) ? '' : ok ? 'same' : 'off'}">${!isNum(mt.ascent) ? '–' : ok ? '범위 안 ✓' : `${(mt.ascent - rh.ascentMax).toFixed(1)}초 느림`}</td></tr>`);
+    } else row('올라오기', mt.ascent, rt.ascent, fmtSec, { unit: '초' });
+    const pt = result.personal;
+    if (pt) {
+      rows.push(`<tr class="group"><th colspan="4">평소 나 (같은 무게 ${pt.n}회 기록)</th></tr>`);
+      row('내려가기', mt.descent, pt.descent, fmtSec, { unit: '초' });
+      row('올라오기', mt.ascent, pt.ascent, fmtSec, { unit: '초' });
+    }
     row('반복 간격', mt.interval, rt.interval, fmtSec, { unit: '초' });
   }
 

@@ -136,7 +136,7 @@ export function showResult(result, opts = {}) {
       cards.push(['최대 상체 기울기', deg(m.maxTrunk), chin ? '+ 앞 / − 뒤' : `기준 ${deg(refBottom.trunk)}`]);
       if (chin && isNum(m.hipRange)) cards.push(['몸 반동', `엉덩이 ${deg(m.hipRange)} 변화`, m.hipRange > UPPER_THRESHOLDS.chinup.kipHip ? '반동 있음' : '안정']);
       cards.push([chin ? '당기기 / 내려오기' : '내려가기 / 올라오기', `${sec(m.down)} / ${sec(m.up)}`, '동작 속도']);
-      if (!r && result.load) cards.push(['무게', result.load.barKg > 0 ? `몸 ${result.load.bodyKg}kg · 보조 ${result.load.barKg}kg` : `몸 ${result.load.bodyKg}kg`, result.load.barKg > 0 ? `실제로 드는 무게 약 ${Math.max(0, Math.round(result.load.bodyKg - result.load.barKg))}kg` : '입력값 (기기에만 저장)']);
+      if (!r && result.load?.bodyKg) cards.push(['무게', result.load.barKg > 0 ? `몸 ${result.load.bodyKg}kg · 보조 ${result.load.barKg}kg` : `몸 ${result.load.bodyKg}kg`, result.load.barKg > 0 ? `실제로 드는 무게 약 ${Math.max(0, Math.round(result.load.bodyKg - result.load.barKg))}kg` : '입력값 (기기에만 저장)']);
       cards.push(['기준과 평균 차이', isNum(diff) ? `${Math.round(diff)}°` : '–', '세 각도 평균']);
       $('metricCards').innerHTML = cards.map(([k, val, sub]) => `<div class="metric"><span>${k}</span><b>${val}</b><small>${sub}</small></div>`).join('');
       return;
@@ -160,9 +160,16 @@ export function showResult(result, opts = {}) {
     if (result.exercise === 'deadlift') { /* 생략 */ } else if (r) cards.push(['발바닥 접지', lifted(r) ? '뒤꿈치 들림' : '고정 ✓', `최대 들림 ${(r.metrics.heelLift * 100).toFixed(1)}% (다리 길이 대비)`]);
     else if (reps.length) cards.push(['발바닥 접지', `${reps.filter((x) => !lifted(x)).length}/${reps.length}회 고정`, '뒤꿈치가 발끝 대비 뜨지 않음']);
     if (isNum(m.backRound)) cards.push(['등 곡률 변화 (실험)', `${m.backRound >= 0 ? '+' : ''}${m.backRound.toFixed(1)}%`, m.backRound > 4 ? '서 있을 때보다 둥글어짐 (참고)' : m.backRound < -4 ? '서 있을 때보다 젖혀짐 (참고)' : '서 있을 때와 비슷 (±4% 이내)']);
-    const balOn = result.exercise !== 'deadlift' || result.load?.barKg > 0;
+    const balOn = result.exercise !== 'deadlift' || (result.load?.barKg > 0 && result.load?.bodyKg > 0);
     if (balOn && isNum(m.comShift)) cards.push(['무게중심 이동 (추정)', Math.abs(m.comShift) <= THRESHOLDS.balance ? '안정 ✓' : m.comShift > 0 ? '앞으로 쏠림' : '뒤로 쏠림', `최저점 · 서 있을 때보다 발 길이의 ${m.comShift >= 0 ? '+' : '−'}${Math.round(Math.abs(m.comShift) * 100)}%${result.load?.barKg > 0 ? ` · 바벨 ${result.load.barKg}kg 포함` : ''}`]);
-    if (!r && result.load) cards.push(['무게', `몸 ${result.load.bodyKg}kg · 바벨 ${result.load.barKg}kg`, '입력값 (기기에만 저장)']);
+    if (!r && result.load) {
+      const L = result.load, pct = result.rhythm?.pct;
+      const parts = [L.bodyKg ? `몸 ${L.bodyKg}kg` : '', `바벨 ${L.barKg}kg`, isNum(pct) ? `${Math.round(pct)}%1RM` : ''].filter(Boolean);
+      cards.push(['무게', parts.join(' · '), L.oneRM ? `1RM ${L.oneRM}kg 입력 · 기기에만 저장` : '입력값 (기기에만 저장)']);
+    }
+    const vl = result.rhythm?.velocityLoss;
+    if (!r && isNum(vl?.last)) cards.push(['세트 속도 손실', `${Math.round(vl.last)}%`, '처음 두 반복 중 빠른 쪽 대비 마지막 반복 (올라오기 시간)']);
+    else if (r && isNum(vl?.perRep?.[r.index - 1])) cards.push(['속도 손실', `${Math.round(vl.perRep[r.index - 1])}%`, '세트 처음 대비 올라오기']);
     if (isNum(m.trunkWobble)) cards.push(['상체 흔들림', `±${m.trunkWobble.toFixed(1)}°`, m.trunkWobble > 2.5 ? '흔들림 있음' : '안정']);
     cards.push(['기준과 평균 차이', isNum(diff) ? `${Math.round(diff)}°` : '–', '세 각도 평균']);
     $('metricCards').innerHTML = cards.map(([k, val, sub]) => `<div class="metric"><span>${k}</span><b>${val}</b><small>${sub}</small></div>`).join('');
@@ -289,8 +296,8 @@ export function showResult(result, opts = {}) {
         if (upper) drawGhostUpper(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, body, W, H);
         else drawGhost(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, result.facings ? { ...body, facing: result.facings[i] } : body, W, H, refProfile);
       }
-      if (showFeet.checked && !upper) { if (result.exercise !== 'deadlift') drawFootContact(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || result.load?.barKg > 0) drawBalance(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
-      if (showBack.checked && !upper) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
+      if (showFeet.checked && !upper) { if (result.exercise !== 'deadlift') drawFootContact(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || (result.load?.barKg > 0 && result.load?.bodyKg > 0)) drawBalance(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
+      if (showBack.checked && !upper && !result.backBlocked) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
       if (showSkel.checked) drawSkeleton(ctx, result.frames[i]?.lm, W, H, { side: result.sides?.[i] || result.side, labels: upper ? { elbow: s.elbow[i] } : { knee: s.knee[i], hip: s.hip[i] } });
       $('seek').value = String(Math.round(((time - T0) / (T1 - T0 || 1)) * 1000));
     }

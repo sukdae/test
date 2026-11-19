@@ -13,6 +13,10 @@ import { josa } from '../src/core/signal.js';
 import { detectView } from '../src/core/landmarks.js';
 import { fuse3D, fusedRows, idealPoses, barPoint, extOf } from '../src/core/fuse3d.js';
 import { upperAngles } from '../src/core/upper.js';
+import { BACK_LEVELS } from '../src/core/back.js';
+import { velocityAt, ascentMaxFor, intensityOf, velocityLoss, personalTempo } from '../src/core/rhythm.js';
+import { buildDatasetEntry, buildExport, packLandmarks, unpackLandmarks, countRepLabels } from '../src/core/dataset.js';
+import { QUESTIONS, figurePoints, surveyCSV, surveyJSON, summarize } from '../src/core/survey.js';
 import { upperChain } from '../src/core/geometry.js';
 
 export const tests = [];
@@ -430,6 +434,89 @@ test('펴짐(신전): 스쿼트는 함께, 엉덩이 먼저 올라오는 반복�
   assert(fusedRows(fz.metrics, fz.reps, 'squat').some((r) => r.key === 'extOrder'), 'fused row');
   const ie = extOf(idealPoses(fz, 'squat'));
   assert(ie.order === 'together', `ideal squat ${ie.order} ${ie.lead}`);
+});
+
+test('등 윤곽: 원판이 등을 가린 영상(위쪽 등 가장자리가 너무 멂)은 등 곡률을 쓰지 않음', () => {
+  const demo = generateDemo('squat');
+  // 원판: 위쪽 등 레벨(0.55 이상)의 등 쪽 가장자리를 0.42 로 (실제 바벨 스쿼트 영상 값)
+  demo.frames.forEach((f) => { f.back = { ...f.back, minus: f.back.minus.map((v, j) => (BACK_LEVELS[j] >= 0.55 ? 0.42 : v)) }; });
+  const res = analyzeSession(demo, 'squat');
+  assert(res.backBlocked && res.warnings.some((w) => w.includes('원판')), 'blocked warning');
+  assert(!res.feedback.some((f) => f.id === 'back-round' || f.id === 'back-arch' || f.id === 'good-core'), res.feedback.map((f) => f.id).join());
+  const clean = analyzeSession(generateDemo('squat'), 'squat');
+  assert(!clean.backBlocked && clean.feedback.some((f) => f.id === 'back-round'), 'clean demo still detects rounding');
+});
+
+test('무게·개인 리듬: 강도별 올라오기 상한, 세트 속도 손실, 평소 리듬 (논문 65–69)', () => {
+  assert(Math.abs(velocityAt(70) - 0.65) < 1e-9 && Math.abs(velocityAt(92.5) - 0.385) < 1e-9, 'lv table');
+  assert(ascentMaxFor(1.5, 60) === 1.5 && Math.abs(ascentMaxFor(1.5, 90) - 1.5 * 0.65 / 0.41) < 1e-9, 'scaled max');
+  assert(Math.abs(intensityOf({ barKg: 90, oneRM: 100 }) - 90) < 1e-9 && !Number.isFinite(intensityOf({ barKg: 90 })), 'intensity');
+  // 마지막 반복만 올라오기 1.5배 → 속도 손실 약 33%
+  const t = Array.from({ length: 100 }, (_, i) => i * 0.1);
+  const reps = [{ start: 0, bottom: 10, end: 20 }, { start: 20, bottom: 30, end: 40 }, { start: 40, bottom: 50, end: 65 }];
+  const vl = velocityLoss(reps, t);
+  assert(Math.abs(vl.last - 33.3) < 0.5 && vl.perRep[0] === 0, `vl ${JSON.stringify(vl)}`);
+  // 무거운 세트(90%): 올라오기 2.0초는 정상 → '힘차게' 지시 없음, 가벼운 세트면 지시
+  const demo = generateDemo('squat', { reps: [{}, {}, {}] });
+  const heavy = analyzeSession(demo, 'squat', { load: { bodyKg: 80, barKg: 90, oneRM: 100 } });
+  assert(Math.abs(heavy.rhythm.pct - 90) < 1e-9 && heavy.rhythm.ascentMax > 2.3, `heavy ${JSON.stringify(heavy.rhythm)}`);
+  const slow = (r) => ({ ...r, tempo: { ...r.tempo, ascent: 2.0 } });
+  assert(!buildCoaching(slow(heavy)).actions.some((a) => a.text.includes('힘차게')), 'heavy: slow ascent ok');
+  const light = analyzeSession(demo, 'squat', { load: { bodyKg: 80, barKg: 50, oneRM: 100 } });
+  assert(buildCoaching(slow(light)).actions.some((a) => a.text.includes('힘차게')), 'light: slow ascent flagged');
+  assert(toCSV(heavy).includes('강도 90%1RM') && toCSV(heavy).includes('velocity_loss_pct'), 'csv');
+  // 평소 리듬: 같은 종목·무게 ±10%만
+  const sessions = [
+    { exercise: 'squat', load: { barKg: 88 }, result: { tempo: { descent: 2.5, ascent: 1.2 } } },
+    { exercise: 'squat', load: { barKg: 60 }, result: { tempo: { descent: 1.0, ascent: 0.8 } } },
+    { exercise: 'deadlift', load: { barKg: 90 }, result: { tempo: { descent: 1.0, ascent: 2.0 } } },
+  ];
+  const pt = personalTempo(sessions, 'squat', { barKg: 90 });
+  assert(pt.n === 1 && pt.ascent === 1.2, `personal ${JSON.stringify(pt)}`);
+  const c = buildCoaching({ ...heavy, personal: pt, tempo: { ...heavy.tempo, ascent: 1.8 } });
+  assert(c.good.some((g) => g.startsWith('평소보다 올라오기')), `chips ${c.good}`);
+});
+
+test('학습용 데이터: 영상·이름 없이 관절점·지표·판정만, 동의한 영상만 내보냄', () => {
+  const res = analyzeSession(generateDemo('squat', { reps: [{}, { depth: 0.55 }] }), 'squat', { load: { bodyKg: 70, barKg: 60, oneRM: 100 } });
+  const e = buildDatasetEntry(res, 'side', { key: 'k1', consent: { subject: true }, appVersion: 't' });
+  assert(e.id === 'k1:side' && e.landmarks.length === res.frames.length && e.landmarks[0].length === 99, 'landmarks packed');
+  const lm = unpackLandmarks(packLandmarks(res.frames[0].lm));
+  assert(Math.abs(lm[25].x - res.frames[0].lm[25].x) < 1e-4, 'round trip');
+  assert(e.reps.length === 2 && typeof e.reps[1].metrics.thighAboveParallel === 'number', 'rep metrics');
+  const json = JSON.stringify(e);
+  assert(!/video\"?:\s*\"?blob|name|face|email/i.test(json.replace('"video":{', '')), 'no identifying fields');
+  const noConsent = buildDatasetEntry(res, 'side', { key: 'k2', consent: { subject: false } });
+  const labels = [
+    { key: 'k1', view: 'side', verdict: 'rep', item: 'rep', rep: 2, issues: ['깊이가 얕음'], raterId: 'r-a', rater: '트레이너' },
+    { key: 'k1', view: 'side', verdict: 'rep', item: 'rep', rep: 1, issues: [], raterId: 'r-a' },
+    { key: 'k2', view: 'side', verdict: 'rep', item: 'rep', rep: 1, issues: [], raterId: 'r-a' },
+  ];
+  const out = buildExport([e, noConsent], labels, { raterId: 'r-a' });
+  assert(out.format === 'formcheck-dataset' && out.sessions.length === 1, 'only consented');
+  assert(out.sessions[0].labels.length === 2 && out.sessions[0].labels.find((l) => l.rep === 2).issues[0] === '깊이가 얕음', 'labels joined');
+  assert(countRepLabels(labels) === 3, 'count');
+});
+
+test('현장 설문(촬영 없음): 문항 인형 자세·CSV·요약', () => {
+  // 깊이 문항: 막대 0 = 허벅지 수평, 40 = 무릎보다 엉덩이가 높음
+  const dq = QUESTIONS.find((q) => q.id === 'depth');
+  const flat = figurePoints(dq.pose(0)), high = figurePoints(dq.pose(40));
+  assert(Math.abs(flat.hip.y - flat.knee.y) < 1e-6, 'parallel at 0');
+  assert(high.hip.y < high.knee.y - 10, 'hip above knee when shallow');
+  const lb = figurePoints(QUESTIONS.find((q) => q.id === 'dlLeanBack').pose(20));
+  assert(lb.shoulder.x < lb.hip.x, 'lean back puts shoulder behind hip');
+  const recs = [
+    { n: 1, at: '2026-11-19T10:00:00Z', profile: { gender: '여', age: '20대', career: '1–3년' }, answers: { depth: 20, heel: 2, trunk: null } },
+    { n: 2, at: '2026-11-19T10:05:00Z', profile: {}, answers: { depth: 30, heel: 4 } },
+    { n: 3, at: '2026-11-19T10:09:00Z', profile: {}, answers: { depth: 40 } },
+  ];
+  const lines = surveyCSV(recs).replace('\ufeff', '').split('\n');
+  assert(lines.length === 4 && lines[0].includes('스쿼트 깊이 (depth)') && lines[1].includes('"모름"'), lines[1]);
+  const s = summarize(recs);
+  assert(s.depth.n === 3 && s.depth.median === 30 && s.heel.n === 2 && s.trunk.n === 0, JSON.stringify(s));
+  const j = surveyJSON(recs);
+  assert(j.format === 'formcheck-threshold-survey' && j.questions.length === QUESTIONS.length && j.responses.length === 3, 'json');
 });
 
 test('촬영 방향 자동 판정', () => {

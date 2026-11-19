@@ -1,7 +1,8 @@
 // 판정 평가: 피드백 항목마다 '맞아요 / 틀렸어요', 그리고 '앱이 놓친 실수'를 기기에 기록한다.
 // 트레이너·체대생 피드백을 기준값 보정용 데이터로 받기 위한 기능. 영상·이름은 저장하지 않는다.
 // 전문가 라벨 데이터로 자세 판정을 개선한 연구 방향 [논문 32]
-import { getSettings } from './storage.js';
+import { getSettings, setSetting, putDataset } from './storage.js';
+import { buildDatasetEntry } from '../core/dataset.js';
 
 const KEY = 'formcheck-labels';
 const $ = (id) => document.getElementById(id);
@@ -24,6 +25,14 @@ const MISSED = {
 };
 
 let ctx = null; // { key, result, view }
+let rjRep = 0;
+
+// 평가자 무작위 id (이름 대신). 같은 사람의 판정을 묶어 평가자 간 일치도를 잴 때 씀
+export function raterId() {
+  let id = getSettings().raterId;
+  if (!id) { id = `r-${Math.random().toString(36).slice(2, 10)}`; setSetting('raterId', id); }
+  return id;
+}
 
 const pick = (m = {}) => {
   const out = {};
@@ -33,7 +42,7 @@ const pick = (m = {}) => {
 
 function record(entry) {
   const list = loadLabels();
-  const i = list.findIndex((x) => x.key === entry.key && x.view === entry.view && x.item === entry.item && entry.verdict !== 'missed');
+  const i = list.findIndex((x) => x.key === entry.key && x.view === entry.view && x.item === entry.item && entry.verdict !== 'missed' && (x.rep ?? null) === (entry.rep ?? null) && (x.raterId || '') === (entry.raterId || ''));
   if (i >= 0) list[i] = entry; else list.push(entry);
   return saveLabels(list);
 }
@@ -41,7 +50,7 @@ function record(entry) {
 function base() {
   const r = ctx.result;
   return {
-    at: new Date().toISOString(), key: ctx.key, rater: getSettings().rater || '',
+    at: new Date().toISOString(), key: ctx.key, rater: getSettings().rater || '', raterId: raterId(),
     exercise: r.exercise, view: ctx.view, bodyKg: r.load?.bodyKg ?? '', barKg: r.load?.barKg ?? '',
     summary: pick(r.summary),
   };
@@ -69,9 +78,39 @@ export function attachJudging(result, view) {
   $('missedBox').hidden = false;
   const missed = saved.filter((x) => x.verdict === 'missed').length;
   $('missedCount').textContent = missed ? `알려 준 것 ${missed}개` : '';
+  // 회차별 판정 (학습용)
+  rjRep = result.reps?.[0]?.index || 0;
+  $('rjIssues').innerHTML = MISSED[ex].concat('기타').map((t) => `<label><input type="checkbox" value="${esc(t)}"> ${esc(t)}</label>`).join('');
+  $('rjConsent').checked = false;
+  $('repJudge').hidden = !(result.reps?.length);
+  renderRepJudge();
 }
 
-export function hideJudging() { ctx = null; $('missedBox').hidden = true; }
+function renderRepJudge() {
+  if (!ctx) return;
+  const done = new Set(loadLabels().filter((x) => x.key === ctx.key && x.view === ctx.view && x.verdict === 'rep' && x.raterId === raterId()).map((x) => x.rep));
+  $('rjReps').innerHTML = (ctx.result.reps || []).map((r) => `<button role="tab" data-rj="${r.index}" aria-selected="${r.index === rjRep}" class="${done.has(r.index) ? 'done' : ''}">${r.index}회${r.partialStart || r.partialEnd ? '*' : ''}</button>`).join('');
+  $('rjCount').textContent = `${done.size}/${ctx.result.reps.length}회 판정`;
+  const cur = loadLabels().find((x) => x.key === ctx.key && x.view === ctx.view && x.verdict === 'rep' && x.rep === rjRep && x.raterId === raterId());
+  $('rjIssues').querySelectorAll('input').forEach((c) => { c.checked = !!cur?.issues?.includes(c.value); });
+}
+
+async function saveRep(issues) {
+  if (!ctx || !rjRep) return;
+  const ok = record({ ...base(), item: 'rep', title: issues.length ? issues.join(', ') : '문제 없음', level: '', verdict: 'rep', rep: rjRep, issues, reps: String(rjRep), note: $('rjNote').value.trim() });
+  $('rjNote').value = '';
+  let saved = false;
+  if ($('rjConsent').checked) {
+    try { await putDataset(buildDatasetEntry(ctx.result, ctx.view, { key: ctx.key, consent: { subject: true, at: new Date().toISOString() }, appVersion: APP_VERSION })); saved = true; } catch { saved = false; }
+  }
+  const next = ctx.result.reps.find((r) => r.index > rjRep);
+  if (next) rjRep = next.index;
+  renderRepJudge();
+  return { ok, saved };
+}
+
+export function hideJudging() { ctx = null; $('missedBox').hidden = true; $('repJudge').hidden = true; }
+export const APP_VERSION = '2026-11-19';
 
 export function initJudging(toast) {
   $('feedbackList').addEventListener('click', (e) => {
@@ -87,6 +126,14 @@ export function initJudging(toast) {
     b.closest('.judge').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     toast(ok ? (b.dataset.v === 'agree' ? '맞다고 기록했어요' : '틀렸다고 기록했어요. 고마워요!') : '저장하지 못했어요');
   });
+  $('rjReps').addEventListener('click', (e) => { const b = e.target.closest('[data-rj]'); if (b) { rjRep = Number(b.dataset.rj); renderRepJudge(); } });
+  const after = (r, what) => toast(!r?.ok ? '저장하지 못했어요' : r.saved ? `${what} · 학습용 데이터에 저장` : `${what} · 동의를 체크하면 학습용 데이터로도 저장돼요`);
+  $('rjOk').addEventListener('click', async () => after(await saveRep([]), '문제 없음으로 기록'));
+  $('rjSave').addEventListener('click', async () => {
+    const issues = [...$('rjIssues').querySelectorAll('input:checked')].map((c) => c.value);
+    if (!issues.length) { toast('실수를 하나 이상 체크하거나 \'문제 없음\'을 눌러 주세요.'); return; }
+    after(await saveRep(issues), `${issues.length}개 실수로 기록`);
+  });
   $('missedSave').addEventListener('click', () => {
     if (!ctx) return;
     const what = $('missedSel').value, rep = $('missedRep').value.trim(), note = $('missedNote').value.trim();
@@ -100,7 +147,7 @@ export function initJudging(toast) {
 
 // CSV (엑셀에서 한글이 깨지지 않게 BOM)
 export function labelsCSV() {
-  const cols = ['at', 'rater', 'exercise', 'view', 'item', 'title', 'level', 'verdict', 'reps', 'note', 'bodyKg', 'barKg', 'key', 'summary'];
+  const cols = ['at', 'rater', 'raterId', 'exercise', 'view', 'item', 'title', 'level', 'verdict', 'rep', 'reps', 'note', 'bodyKg', 'barKg', 'key', 'summary'];
   const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const rows = loadLabels().map((x) => cols.map((c) => q(c === 'summary' ? JSON.stringify(x.summary || {}) : x[c])).join(','));
   return '﻿' + [cols.join(','), ...rows].join('\n');

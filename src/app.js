@@ -3,8 +3,12 @@ import { EXERCISES } from './core/exercises.js';
 import { fuse3D } from './core/fuse3d.js';
 import { showFused, hideFused } from './ui/fused.js';
 import { shareResult } from './ui/share.js';
-import { attachJudging, hideJudging, initJudging, loadLabels, clearLabels, labelsCSV } from './ui/judge.js';
+import { attachJudging, hideJudging, initJudging, loadLabels, clearLabels, labelsCSV, raterId, APP_VERSION } from './ui/judge.js';
+import { buildExport, countRepLabels } from './core/dataset.js';
+import { initSurvey, startSurvey, loadSurveys, clearSurveys } from './ui/survey.js';
+import { surveyCSV, surveyJSON } from './core/survey.js';
 import { analyzeSession } from './core/analyze.js';
+import { personalTempo } from './core/rhythm.js';
 import { analyzeFront } from './core/front.js';
 import { detectView, viewScore } from './core/landmarks.js';
 import { mergeCoaching, compareViews } from './core/coach.js';
@@ -17,7 +21,7 @@ import { renderHistory, sessionItem } from './ui/history.js';
 import * as store from './ui/storage.js';
 
 const $ = (id) => document.getElementById(id);
-const TITLES = { onboarding: '시작하기', home: '폼 체크', capture: '촬영', step: '정면 영상', processing: '분석 중', result: '분석 결과', history: '기록', settings: '설정' };
+const TITLES = { survey: '현장 설문', onboarding: '시작하기', home: '폼 체크', capture: '촬영', step: '정면 영상', processing: '분석 중', result: '분석 결과', history: '기록', settings: '설정' };
 const VIEW_KO = { side: '측면', front: '정면' };
 const MODE_HINT = { side: '깊이 · 상체 · 뒤꿈치 · 리듬', front: '무릎 · 좌우 균형 · 체중 분배', both: '영상 2개를 한 번에 골라도 돼요 · 3D' };
 // 데드리프트는 베타: 기준 자세 일부만 논문 근거, 나머지는 초깃값 → 트레이너 피드백용
@@ -83,6 +87,8 @@ function renderHome() {
   $('bodyKg').value = st.bodyKg ?? '';
   $('barKg').value = st.barKg?.[state.exercise] ?? '';
   $('barLabel').textContent = isUpper(state.exercise) ? '보조' : '바벨';
+  $('oneRM').value = st.oneRM?.[state.exercise] ?? '';
+  $('oneRMLabel').hidden = isUpper(state.exercise);
   $('barKg').title = isUpper(state.exercise) ? '어시스트 머신 보조 무게' : '바벨 무게';
   const sideOnly = SIDE_ONLY.includes(state.exercise);
   if (sideOnly) state.mode = 'side';
@@ -102,6 +108,8 @@ function goHome() { show('home'); renderHome(); }
 
 $('bodyKg').addEventListener('change', (e) => { const v = parseFloat(e.target.value); store.setSetting('bodyKg', v >= 20 && v <= 300 ? v : null); });
 $('barKg').addEventListener('change', (e) => { const v = parseFloat(e.target.value); const all = { ...(store.getSettings().barKg || {}) }; all[state.exercise] = v >= 0 && v <= 600 ? v : null; store.setSetting('barKg', all); });
+
+$('oneRM').addEventListener('change', (e) => { const v = parseFloat(e.target.value); const all = { ...(store.getSettings().oneRM || {}) }; all[state.exercise] = v > 0 && v <= 600 ? v : null; store.setSetting('oneRM', all); });
 
 $('exSeg').addEventListener('click', (e) => {
   const b = e.target.closest('[data-ex]');
@@ -189,7 +197,7 @@ $('demoBtn').addEventListener('click', () => {
 });
 
 // 무게 입력(선택): 몸무게는 기억, 바벨 무게는 종목별로 마지막 값 기억. 기기 밖으로 보내지 않음
-const curLoad = () => ({ bodyKg: parseFloat($('bodyKg').value), barKg: parseFloat($('barKg').value) || 0 });
+const curLoad = () => ({ bodyKg: parseFloat($('bodyKg').value), barKg: parseFloat($('barKg').value) || 0, oneRM: parseFloat($('oneRM').value) || null });
 const refOpt = (ex) => ({ referenceId: store.getSettings().references?.[ex], load: curLoad() });
 
 // ---------- 분석 ----------
@@ -211,6 +219,10 @@ async function analyzeBlob(blob, view, label = null) {
     text.textContent = '지표 계산 중…';
     if (view === 'auto') view = detectView(data);
     const result = view === 'front' ? analyzeFront(data, exId) : analyzeSession(data, exId, refOpt(exId));
+    // 개인 리듬: 저장한 기록 중 같은 종목·비슷한 무게의 평소 리듬 (기기 안에서만)
+    if (view !== 'front' && result.load !== undefined) {
+      try { result.personal = personalTempo(await store.listSessions(), exId, result.load); } catch { result.personal = null; }
+    }
     result.analysisSec = (performance.now() - started) / 1000;
     if (state.view !== 'processing') { URL.revokeObjectURL(url); return null; }
     return { result, url, view, score: viewScore(data) };
@@ -401,6 +413,9 @@ async function openSettings() {
   const labels = loadLabels();
   $('labelInfo').textContent = labels.length ? `평가 ${labels.length}개 (틀렸어요 ${labels.filter((x) => x.verdict === 'wrong').length} · 놓친 실수 ${labels.filter((x) => x.verdict === 'missed').length})` : '아직 평가 기록이 없어요.';
   $('storageInfo').textContent = `저장된 기록 ${n}개${used != null ? ` · 사용 중 약 ${(used / 1e6).toFixed(1)}MB` : ''}`;
+  const ds = await store.listDataset().catch(() => []);
+  const sv = loadSurveys();
+  $('datasetInfo').textContent = sv.length || ds.length ? `설문 ${sv.length}명 · 관절점 데이터 영상 ${ds.length}개${countRepLabels(loadLabels()) ? ` · 회차별 판정 ${countRepLabels(loadLabels())}개` : ''}` : '아직 없어요. 홈의 \'현장 설문 모드\'로 참여자를 받으면 쌓여요.';
 }
 $('settingsBtn').addEventListener('click', openSettings);
 $('setSaveVideo').addEventListener('change', (e) => store.setSetting('saveVideo', e.target.checked));
@@ -409,7 +424,10 @@ $('deleteAll').addEventListener('click', async () => {
   await store.clearSessions();
   store.setSetting('bodyKg', null);
   store.setSetting('barKg', {});
+  store.setSetting('oneRM', {});
   clearLabels();
+  clearSurveys();
+  await store.clearDataset().catch(() => {});
   toast('모든 기록을 삭제했어요.');
   openSettings();
 });
@@ -423,7 +441,48 @@ $('exportLabels').addEventListener('click', () => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
+$('exportDataset').addEventListener('click', async () => {
+  const ds = await store.listDataset().catch(() => []);
+  if (!ds.length) { toast('아직 학습용 데이터가 없어요.'); return; }
+  const ok = confirm('학습용 데이터를 파일로 내보낼까요?\n\n들어가는 것: 관절점 좌표(숫자), 각도·리듬 지표, 앱 판정, 내 판정, 입력한 몸무게·바벨 무게·1RM\n들어가지 않는 것: 영상, 이름, 얼굴\n\n찍힌 사람에게 동의를 받은 영상만 들어가요. 파일은 연구·기준값 보정 목적으로만 공유해 주세요.');
+  if (!ok) return;
+  const out = buildExport(ds, loadLabels(), { raterId: raterId(), raterRole: store.getSettings().rater || '', appVersion: APP_VERSION });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(out)], { type: 'application/json' }));
+  a.download = `formcheck-dataset-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+$('clearDataset').addEventListener('click', async () => {
+  if (!confirm('학습용 데이터(관절점·지표)를 모두 삭제할까요? 판정 기록 자체는 남아요. 되돌릴 수 없어요.')) return;
+  await store.clearDataset().catch(() => {});
+  toast('학습용 데이터를 삭제했어요.');
+  openSettings();
+});
 initJudging(toast);
+initSurvey({ toast, onExit: goHome });
+$('surveyOpen').addEventListener('click', () => { show('survey'); startSurvey(); });
+const download = (data, type, name) => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([data], { type }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+$('exportSurveyJson').addEventListener('click', () => {
+  const list = loadSurveys();
+  if (!list.length) { toast('아직 설문 결과가 없어요.'); return; }
+  download(JSON.stringify(surveyJSON(list)), 'application/json', `formcheck-survey-${new Date().toISOString().slice(0, 10)}.json`);
+});
+$('exportSurvey').addEventListener('click', () => {
+  const list = loadSurveys();
+  if (!list.length) { toast('아직 설문 결과가 없어요.'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([surveyCSV(list)], { type: 'text/csv' }));
+  a.download = `formcheck-survey-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
 
 // ---------- 공통 ----------
 $('backBtn').addEventListener('click', () => {
