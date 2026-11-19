@@ -16,50 +16,42 @@ const squatPose = (above = 0, shin = 30, trunk = null) => {
 };
 
 // 문항: value 는 막대 값. app = 앱 기준값(같은 단위). dir = 앱에서 '문제'가 되는 쪽(> 크면 문제 / < 작으면 문제)
+//   논문으로 이미 정해진 것은 묻지 않는다: 상체 숙임은 잘못된 자세의 기준이 아님(Straub & Powers 2024),
+//   무릎이 발끝을 넘는 것은 괜찮음(Fry 외 2003). → 수치 근거가 없는 [초깃값] 항목만 묻는다.
+//   (깊이는 '평행이 목표'까지는 논문, '몇 도부터 얕다고 지적할지'는 초깃값)
+export const LEG_CM = 90; // 뒤꿈치 높이를 cm 로 보여 주기 위한 평균 다리 길이 가정 [초깃값]
 export const QUESTIONS = [
   {
     id: 'depth', exercise: 'squat', title: '스쿼트 깊이',
-    ask: "어디부터 '얕다'고 보세요?",
+    ask: "몇 도부터 '덜 앉았다(얕다)'고 지적하시겠어요?",
+    explain: '파란 굵은 선 = 허벅지(엉덩이→무릎). 점선 = 바닥과 수평. 목표는 허벅지가 수평이 되는 깊이예요.',
     min: -20, max: 60, step: 1, start: 20, dir: '>', app: 35,
     appNote: '앱: 허벅지가 수평보다 35° 넘게 위면 얕음 (15–35°는 조금 못 미침)',
-    label: (v) => (v === 0 ? '허벅지 수평' : v < 0 ? `평행보다 ${-v}° 아래` : `수평보다 ${v}° 위`),
+    label: (v) => (v === 0 ? '허벅지가 딱 수평' : v < 0 ? `수평보다 ${-v}° 더 깊음` : `수평보다 ${v}° 덜 앉음`),
     pose: (v) => squatPose(v),
   },
   {
-    id: 'trunk', exercise: 'squat', title: '스쿼트 상체 숙임',
-    ask: "어디부터 상체를 '너무 숙였다'고 보세요?",
-    min: 10, max: 75, step: 1, start: 35, dir: '>', app: null,
-    appNote: '앱: 숙임만으로는 지적하지 않음 (정강이와 비교해 엉덩이·무릎 위주만 알려 줌)',
-    label: (v) => `상체 ${v}° 기울임`,
-    pose: (v) => squatPose(0, 30, v),
-  },
-  {
     id: 'heel', exercise: 'squat', title: '뒤꿈치 들림',
-    ask: "어디부터 '뒤꿈치가 들렸다'고 보세요?",
+    ask: "앉을 때 뒤꿈치가 바닥에서 몇 cm 떠야 '들렸다'고 지적하시겠어요?",
+    explain: '오른쪽 위 확대 그림에서 발과 바닥 사이 틈(빨간 선)을 보세요.',
     min: 0, max: 10, step: 0.5, start: 3, dir: '>', app: 3,
-    appNote: '앱: 다리 길이의 3% 넘게 들리면 지적',
-    label: (v) => `다리 길이의 ${v}%`,
+    appNote: '앱: 다리 길이의 3%(다리 90 cm면 약 2.7 cm) 넘게 들리면 지적',
+    label: (v) => `약 ${((v / 100) * LEG_CM).toFixed(1)} cm 뜸`,
     pose: (v) => ({ ...squatPose(0), heel: v / 100 }),
-  },
-  {
-    id: 'kneeFwd', exercise: 'squat', title: '무릎이 앞으로 나감',
-    ask: '무릎이 어디까지 앞으로 나가도 괜찮다고 보세요?',
-    min: 5, max: 50, step: 1, start: 25, dir: '>', app: null,
-    appNote: '앱: 지적하지 않음 (무릎이 발끝을 넘는 것은 괜찮다는 연구 — Fry 외 2003)',
-    label: (v) => `정강이 ${v}° 기울임`,
-    pose: (v) => ({ ...squatPose(0, v, v) }),
   },
   {
     id: 'dlLockout', exercise: 'deadlift', title: '데드리프트 마무리',
     ask: "어디까지 펴야 '끝까지 폈다'고 보세요?",
+    explain: '바를 들고 일어선 마지막 자세예요. 180° = 몸이 일자.',
     min: 140, max: 180, step: 1, start: 160, dir: '<', app: 165,
     appNote: '앱: 마무리 엉덩이 각도 165° 미만이면 덜 폄',
-    label: (v) => `엉덩이 ${v}°`,
-    pose: (v) => ({ shin: 2, thigh: -3 + 0, trunk: -3 + 180 - v, heel: 0, bar: 'hands' }),
+    label: (v) => `엉덩이 ${v}°${v >= 178 ? ' (일자)' : ''}`,
+    pose: (v) => ({ shin: 2, thigh: -3, trunk: -3 + 180 - v, heel: 0, bar: 'hands' }),
   },
   {
     id: 'dlLeanBack', exercise: 'deadlift', title: '데드리프트 뒤로 젖힘',
-    ask: "어디부터 '뒤로 젖혔다'고 보세요?",
+    ask: "마무리에서 몇 도부터 '뒤로 젖혔다'고 지적하시겠어요?",
+    explain: '점선 = 수직. 상체가 수직보다 뒤로 넘어간 정도예요.',
     min: 0, max: 35, step: 1, start: 10, dir: '>', app: 15,
     appNote: '앱: 상체가 수직보다 15° 넘게 뒤로 가면 지적',
     label: (v) => `상체 뒤로 ${v}°`,

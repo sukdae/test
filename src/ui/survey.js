@@ -1,6 +1,6 @@
 // 현장 설문 화면 (촬영 없음): 동의·간단 정보 → 문항마다 막대로 인형 각도를 움직여 '여기부터 문제' 정하기 → 다음 사람
 // 저장: 기기 localStorage. 설정에서 엑셀 CSV / 분석용 JSON 으로 내보낸다.
-import { QUESTIONS, figurePoints } from '../core/survey.js';
+import { QUESTIONS, figurePoints, LEG_CM } from '../core/survey.js';
 import { cssVar } from './draw.js';
 
 const KEY = 'formcheck-survey2';
@@ -33,7 +33,7 @@ function draw(canvas, q, v) {
   ctx.strokeStyle = muted; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(W * 0.08, H * 0.88 + 1); ctx.lineTo(W * 0.92, H * 0.88 + 1); ctx.stroke();
   // 수평선(허벅지 평행 비교용) — 깊이 문항
   if (q.id === 'depth') { ctx.save(); ctx.setLineDash([4, 5]); ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(p.knee.x - W * 0.3, p.knee.y); ctx.lineTo(p.knee.x + W * 0.1, p.knee.y); ctx.stroke(); ctx.restore(); }
-  if (q.id === 'dlLeanBack' || q.id === 'trunk') { ctx.save(); ctx.setLineDash([4, 5]); ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(p.hip.x, p.hip.y); ctx.lineTo(p.hip.x, p.hip.y - H * 0.32); ctx.stroke(); ctx.restore(); }
+  if (q.id === 'dlLeanBack') { ctx.save(); ctx.setLineDash([4, 5]); ctx.strokeStyle = muted; ctx.beginPath(); ctx.moveTo(p.hip.x, p.hip.y); ctx.lineTo(p.hip.x, p.hip.y - H * 0.32); ctx.stroke(); ctx.restore(); }
   const seg = (a, b, w = 7, c = accent) => { ctx.strokeStyle = c; ctx.lineWidth = w; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
   seg(p.heel, p.toe, 5); seg(p.heel, p.ankle, 5); seg(p.ankle, p.knee); seg(p.knee, p.hip); seg(p.hip, p.shoulder, 8);
   seg(p.shoulder, p.elbow, 5, text); seg(p.elbow, p.hand, 5, text);
@@ -43,6 +43,31 @@ function draw(canvas, q, v) {
   ctx.beginPath(); ctx.arc(p.bar.x, p.bar.y, p.plateR, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.fillStyle = text; ctx.beginPath(); ctx.arc(p.bar.x, p.bar.y, 4, 0, Math.PI * 2); ctx.fill();
   for (const j of [p.knee, p.hip, p.shoulder]) { ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(j.x, j.y, 5, 0, Math.PI * 2); ctx.fill(); }
+  // 깊이: 허벅지 선을 굵고 다른 색으로
+  if (q.id === 'depth') { seg(p.hip, p.knee, 11, '#38bdf8'); ctx.fillStyle = '#38bdf8'; ctx.font = '600 12px system-ui'; ctx.fillText('허벅지', (p.hip.x + p.knee.x) / 2 - 18, Math.min(p.hip.y, p.knee.y) - 10); ctx.fillStyle = muted; ctx.fillText('수평', p.knee.x + W * 0.1 + 4, p.knee.y + 4); }
+  // 뒤꿈치: 실제 크기 비율로 그린 발 확대 그림 (발 길이 26 cm 가정) + 틈(빨간 화살표)과 cm
+  if (q.id === 'heel') {
+    const bx = W * 0.52, by = H * 0.04, bw = W * 0.44, bh = H * 0.36;
+    ctx.save();
+    ctx.fillStyle = cssVar('--surface-2') || '#1e293b'; ctx.strokeStyle = muted; ctx.lineWidth = 1;
+    ctx.fillRect(bx, by, bw, bh); ctx.strokeRect(bx, by, bw, bh);
+    const floorY = by + bh * 0.8, footPx = bw * 0.7, toeX = bx + bw * 0.85, heelX0 = toeX - footPx;
+    const liftCm = (v / 100) * LEG_CM, lift = (liftCm / 26) * footPx;
+    ctx.strokeStyle = muted; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(bx + 6, floorY); ctx.lineTo(bx + bw - 6, floorY); ctx.stroke();
+    // 발(신발) 모양: 발끝을 축으로 뒤꿈치가 들림
+    const a = Math.asin(Math.min(0.9, lift / footPx));
+    const P = (dx, dy) => ({ x: toeX - Math.cos(a) * dx - Math.sin(a) * dy, y: floorY - Math.sin(a) * dx - Math.cos(a) * dy });
+    const shoe = [P(0, 0), P(footPx, 0), P(footPx, footPx * 0.28), P(footPx * 0.7, footPx * 0.32), P(footPx * 0.35, footPx * 0.22), P(0, footPx * 0.1)];
+    ctx.fillStyle = accent; ctx.beginPath(); shoe.forEach((pt, k) => (k ? ctx.lineTo(pt.x, pt.y) : ctx.moveTo(pt.x, pt.y))); ctx.closePath(); ctx.fill();
+    const heelPt = P(footPx, 0);
+    if (lift > 1.5) {
+      ctx.strokeStyle = '#ef4444'; ctx.fillStyle = '#ef4444'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(heelPt.x, heelPt.y + 2); ctx.lineTo(heelPt.x, floorY - 1); ctx.stroke();
+      ctx.font = '700 12px system-ui'; ctx.fillText(`${liftCm.toFixed(1)} cm`, heelPt.x + 4, (heelPt.y + floorY) / 2 + 4);
+    }
+    ctx.restore();
+    ctx.fillStyle = muted; ctx.font = '600 11px system-ui'; ctx.fillText('발 확대 (뒤꿈치 ←  → 발끝)', bx + 6, by + 14);
+  }
 }
 
 function render() {
@@ -54,7 +79,7 @@ function render() {
     const chips = (name, opts) => `<div class="sv-chips" data-q="${name}">${opts.map((o) => `<button type="button" data-v="${esc(o)}" aria-pressed="${st.profile[name] === o}">${esc(o)}</button>`).join('')}</div>`;
     box.innerHTML = `
       <p class="sv-title">참여자 ${n}번 <small class="muted">· 오늘 ${todayCount()}명</small></p>
-      <p class="sv-consent">인형을 움직여 '어디부터 잘못된 자세인지' 골라 주시는 설문이에요. 촬영·이름 없이 답만 연구용으로 써요. (문항 ${total}개, 1분)</p>
+      <p class="sv-consent">인형을 움직여 '어디부터 잘못된 자세인지' 골라 주시는 설문이에요. 촬영·이름 없이 답만 연구용으로 써요. (문항 ${total}개, 30초)</p>
       ${chips('gender', ['남', '여'])}
       ${chips('age', ['10대', '20대', '30대', '40대+'])}
       ${chips('career', ['1년 미만', '1–3년', '3년+'])}
@@ -75,6 +100,7 @@ function render() {
     <div class="sv-progress"><span style="width:${((st.step) / total) * 100}%"></span></div>
     <p class="muted sv-step">${st.step + 1} / ${total} · ${esc(q.title)}</p>
     <p class="sv-title">${esc(q.ask)}</p>
+    <p class="sv-explain">${esc(q.explain || '')}</p>
     <canvas id="svFig" class="sv-fig"></canvas>
     <p class="sv-value" id="svValue">${esc(q.label(st.value))}</p>
     <input type="range" id="svRange" min="${q.min}" max="${q.max}" step="${q.step}" value="${st.value}" aria-label="${esc(q.title)} 조절">

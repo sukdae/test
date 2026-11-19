@@ -469,6 +469,14 @@ const download = (data, type, name) => {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
+$('resetSurvey').addEventListener('click', () => {
+  const n = loadSurveys().length;
+  if (!n) { toast('지울 설문 결과가 없어요.'); return; }
+  if (!confirm(`설문 결과 ${n}명을 모두 지우고 1번부터 다시 시작할까요? 되돌릴 수 없어요.\n(먼저 내보내 두려면 '취소')`)) return;
+  clearSurveys();
+  toast('설문 결과를 초기화했어요. 다음 참여자는 1번이에요.');
+  openSettings();
+});
 $('exportSurveyJson').addEventListener('click', () => {
   const list = loadSurveys();
   if (!list.length) { toast('아직 설문 결과가 없어요.'); return; }

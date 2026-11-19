@@ -277,16 +277,7 @@ export function fusedRows(m, repsList = [], exId = 'squat') {
     rows.push({ key: 'barLat', label: '바 좌우 흔들림', value: `다리 길이의 ${pct(m.bar.lat)}`, ok: null, reps: [] });
     if (isNum(m.bar.fromFoot)) rows.push({ key: 'barFoot', label: '발 가운데에서 최대', value: `${m.bar.fromFoot > 0 ? '앞' : '뒤'} ${pct(m.bar.fromFoot)}`, ok: null, reps: [] });
   }
-  if (m.ext && m.ext.order) {
-    const want = EXT_EXPECT[exId];
-    const bad = repsList.filter((r) => r.metrics.ext?.order && want && r.metrics.ext.order !== want);
-    const hit = bad.map((r) => r.index);
-    const badOrder = bad.length ? bad[0].metrics.ext.order : m.ext.order;
-    const ISSUE = { 'knee-first': '올라올 때 무릎이 먼저 펴져요(엉덩이가 먼저 올라옴)', 'hip-first': '올라올 때 엉덩이가 먼저 펴져요', together: '올라올 때 무릎·엉덩이가 함께 펴져요' };
-    rows.push({ key: 'extOrder', issue: ISSUE[badOrder], label: `펴지는 순서 (기준: ${EXT_KO[want] || '–'})`, value: EXT_KO[m.ext.order], ok: want ? m.ext.order === want : null, reps: hit });
-    rows.push({ key: 'extTop', label: '마무리 무릎 / 엉덩이', value: `${m.ext.topKnee.toFixed(0)}° / ${m.ext.topHip.toFixed(0)}°`, ok: null, reps: [] });
-    if (isNum(m.ext.leanBack)) rows.push({ key: 'extLean', label: '마무리 상체 뒤로', value: `${m.ext.leanBack.toFixed(0)}°`, ok: null, reps: [] });
-  }
+  // 펴짐(신전) 순서·마무리는 3D 표에 넣지 않는다: 측면·정면을 위상으로 맞춘 대표 반복이라 순서가 부정확할 수 있음. CSV(측면 원본)에만 둔다
   const kl = m.knee3D.L, kr = m.knee3D.R;
   if (isNum(kl) || isNum(kr)) rows.push({ key: 'knee3D', label: '무릎 각도', value: `${isNum(kl) ? kl.toFixed(0) : '–'}° / ${isNum(kr) ? kr.toFixed(0) : '–'}°`, ok: null, reps: [] });
   return rows;

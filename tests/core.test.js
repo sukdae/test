@@ -431,7 +431,7 @@ test('펴짐(신전): 스쿼트는 함께, 엉덩이 먼저 올라오는 반복�
   assert(csv.includes('knee_ext_vel_dps') && csv.includes('ext_order') && csv.includes(',together,'), 'csv ext');
   const fz = fuse3D(sq, analyzeFront(generateFrontDemo(), 'squat'));
   assert(fz.metrics.ext && fz.metrics.ext.order, 'fused ext');
-  assert(fusedRows(fz.metrics, fz.reps, 'squat').some((r) => r.key === 'extOrder'), 'fused row');
+  assert(!fusedRows(fz.metrics, fz.reps, 'squat').some((r) => r.key === 'extOrder'), '3D table no longer shows extension order');
   const ie = extOf(idealPoses(fz, 'squat'));
   assert(ie.order === 'together', `ideal squat ${ie.order} ${ie.lead}`);
 });
@@ -507,14 +507,15 @@ test('현장 설문(촬영 없음): 문항 인형 자세·CSV·요약', () => {
   const lb = figurePoints(QUESTIONS.find((q) => q.id === 'dlLeanBack').pose(20));
   assert(lb.shoulder.x < lb.hip.x, 'lean back puts shoulder behind hip');
   const recs = [
-    { n: 1, at: '2026-11-19T10:00:00Z', profile: { gender: '여', age: '20대', career: '1–3년' }, answers: { depth: 20, heel: 2, trunk: null } },
+    { n: 1, at: '2026-11-19T10:00:00Z', profile: { gender: '여', age: '20대', career: '1–3년' }, answers: { depth: 20, heel: 2, dlLeanBack: null } },
     { n: 2, at: '2026-11-19T10:05:00Z', profile: {}, answers: { depth: 30, heel: 4 } },
     { n: 3, at: '2026-11-19T10:09:00Z', profile: {}, answers: { depth: 40 } },
   ];
   const lines = surveyCSV(recs).replace('\ufeff', '').split('\n');
   assert(lines.length === 4 && lines[0].includes('스쿼트 깊이 (depth)') && lines[1].includes('"모름"'), lines[1]);
   const s = summarize(recs);
-  assert(s.depth.n === 3 && s.depth.median === 30 && s.heel.n === 2 && s.trunk.n === 0, JSON.stringify(s));
+  assert(s.depth.n === 3 && s.depth.median === 30 && s.heel.n === 2 && s.dlLeanBack.n === 0, JSON.stringify(s));
+  assert(!QUESTIONS.some((q) => q.id === 'trunk' || q.id === 'kneeFwd'), 'paper-settled questions removed');
   const j = surveyJSON(recs);
   assert(j.format === 'formcheck-threshold-survey' && j.questions.length === QUESTIONS.length && j.responses.length === 3, 'json');
 });

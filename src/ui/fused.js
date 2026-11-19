@@ -1,5 +1,5 @@
 // 둘 다 모드: 측면+정면 3D 합성 진단표와 돌려 볼 수 있는 3D 뼈대
-import { fusedRows, idealPoses, midFoot, barPoint, extOf, FUSE_N } from '../core/fuse3d.js';
+import { fusedRows, idealPoses, midFoot, barPoint, FUSE_N } from '../core/fuse3d.js';
 import { cssVar } from './draw.js';
 import { phaseByTempo } from '../core/reference.js';
 
@@ -57,7 +57,6 @@ export function showFused(fz) {
   $('fusedChips').addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { sel = Number(b.dataset.r); render(); } }, { signal: ac.signal });
   const LC = '#38bdf8', RC = '#fb923c', BC = '#facc15', IC = cssVar('--c-ghost') || '#e879f9';
   const ideal = idealPoses(fz, fz.exercise);
-  const idealExt = extOf(ideal);
   const showIdeal = $('fusedIdeal'), showBar = $('fusedBar');
   const start = performance.now();
   const loop = (now) => {
@@ -142,19 +141,6 @@ export function showFused(fz) {
     let ly = 48;
     if (ip) { ctx.fillStyle = IC; ctx.fillText('┄ 기준 자세', 8, ly); ly += 16; }
     if (bar?.path?.some(Boolean)) { ctx.fillStyle = BC; ctx.fillText('● 바 궤적 (추정)', 8, ly); ly += 16; }
-    // 펴짐(신전) 막대: 올라오는 동안 무릎·엉덩이가 얼마나 펴졌는지(0–100%). 보라 눈금 = 기준 자세의 같은 순간
-    const ex = cur().metrics.ext;
-    if (ex && ph > 0.5) {
-      const bars = [['무릎', ex.kneeProg[k], idealExt?.kneeProg[Math.round(phIdeal * (FUSE_N - 1))]], ['엉덩이', ex.hipProg[k], idealExt?.hipProg[Math.round(phIdeal * (FUSE_N - 1))]]];
-      bars.forEach(([name, v, iv], j) => {
-        const y = h - 58 + j * 14, x = w - 108;
-        ctx.fillStyle = cssVar('--muted') || '#94a3b8'; ctx.fillText(name, x - 40, y + 7);
-        ctx.fillStyle = cssVar('--border') || '#334155'; ctx.fillRect(x, y, 100, 6);
-        if (isFinite(v)) { ctx.fillStyle = j ? RC : LC; ctx.fillRect(x, y, 100 * v, 6); }
-        if (ip && isFinite(iv)) { ctx.fillStyle = IC; ctx.fillRect(x + 100 * iv - 1, y - 2, 2, 10); }
-      });
-      ctx.fillStyle = cssVar('--muted') || '#94a3b8'; ctx.fillText('펴짐', w - 108, h - 64);
-    }
     // 리듬 표시: 내려가기↓ / 올라오기↑ 초, 진행 막대
     if (myT) {
       const fmt = (x) => `↓${x.descent.toFixed(1)}초 ↑${x.ascent.toFixed(1)}초`;
