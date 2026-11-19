@@ -283,7 +283,7 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 #viewHint { margin: 8px 0 0; }
 [hidden] { display: none !important; }
 
-.fused-canvas { display: block; width: 100%; height: 280px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; touch-action: pan-y; cursor: grab; }
+.fused-canvas { display: block; width: 100%; height: 280px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; touch-action: none; cursor: grab; }
 .warn-text { color: var(--warn); }
 .fused-summary { list-style: none; margin: 8px 0; padding: 0; display: grid; gap: 4px; font-size: 14px; font-weight: 600; }
 .fused-summary .bad { color: var(--warn); }
@@ -292,6 +292,9 @@ h2 { font-size: 16px; margin: 24px 0 8px; }
 #fusedChips button.bad { color: var(--warn); }
 .vs.compact th, .vs.compact td { padding: 6px 10px; }
 #fusedBlock { margin: 16px 0; }
+.fused-views { margin: -2px 0 8px; }
+.fused-opts { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; }
+.sw-bar { background: #facc15; }
 .ex-seg { display: flex; width: max-content; margin: 4px auto 0; }
 .ex-seg small { font-size: 10px; color: var(--warn); }
 .seg button:disabled { opacity: .35; cursor: not-allowed; }

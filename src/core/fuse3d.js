@@ -13,7 +13,7 @@ import { DEG } from './geometry.js';
 import { referenceAngles, getReference, bell } from './exercises.js';
 
 export const FUSE_N = 21; // 위상 표본 수 (0, 0.05, … 1)
-export const JOINTS = ['shoulder', 'hip', 'knee', 'ankle', 'foot'];
+export const JOINTS = ['shoulder', 'hip', 'knee', 'ankle', 'foot', 'wrist'];
 
 export const FUSE_THRESHOLDS = {
   // 무릎 방향과 발끝 방향의 차이(수평면, 도). 양수 = 무릎이 발끝보다 안쪽 [초깃값]
@@ -143,6 +143,40 @@ function metricsOf(poses) {
   return metrics;
 }
 
+// 바 위치(추정): 데드리프트는 양 손목 가운데, 스쿼트는 양 어깨 가운데(바가 등 위에 얹힘).
+// 한쪽만 보이면 그쪽 x를 0(몸 가운데)으로 둔다. 원판에 손목이 가려진 위상은 null.
+export function barPoint(pose, exId = 'squat') {
+  const j = exId === 'deadlift' ? 'wrist' : 'shoulder';
+  const l = pose.L[j], r = pose.R[j];
+  if (l && r) return { x: (l.x + r.x) / 2, y: (l.y + r.y) / 2, z: (l.z + r.z) / 2 };
+  const one = l || r;
+  return one ? { x: 0, y: one.y, z: one.z } : null;
+}
+
+// 발 가운데(발목–발끝 중간, 양발 평균, 시작 자세)
+export function midFoot(pose) {
+  const pts = ['L', 'R'].flatMap((S) => (pose[S].ankle && pose[S].foot ? [{ x: (pose[S].ankle.x + pose[S].foot.x) / 2, z: (pose[S].ankle.z + pose[S].foot.z) / 2 }] : []));
+  return pts.length ? { x: median(pts.map((p) => p.x)), z: median(pts.map((p) => p.z)) } : null;
+}
+
+// 바 궤적 요약: 앞뒤·좌우로 움직인 폭, 발 가운데에서 앞뒤로 가장 멀어진 거리 (다리 길이 대비). 판정 없이 정보만.
+export function barPathOf(poses, exId = 'squat') {
+  const raw = poses.map((p) => barPoint(p, exId));
+  // 관절점 흔들림을 줄이려고 이웃 위상과 3점 평균 (빈 위상은 건너뜀)
+  const path = raw.map((b, k) => {
+    if (!b) return null;
+    const nb = [raw[k - 1], b, raw[k + 1]].filter(Boolean);
+    const avg = (key) => nb.reduce((sum, q) => sum + q[key], 0) / nb.length;
+    return { x: avg('x'), y: avg('y'), z: avg('z') };
+  });
+  const ok = path.filter(Boolean);
+  if (ok.length < FUSE_N / 2) return { path, fwd: NaN, lat: NaN, fromFoot: NaN };
+  const span = (k) => Math.max(...ok.map((p) => p[k])) - Math.min(...ok.map((p) => p[k]));
+  const mf = midFoot(poses[0]);
+  const far = mf ? ok.reduce((m, p) => (Math.abs(p.z - mf.z) > Math.abs(m) ? p.z - mf.z : m), 0) : NaN;
+  return { path, fwd: span('z'), lat: span('x'), fromFoot: far };
+}
+
 // 판정에 걸린 항목 key 목록 (fusedRows 의 key 와 같음)
 export function issuesOf(m) {
   const T = FUSE_THRESHOLDS, out = [];
@@ -162,6 +196,7 @@ export function fuse3D(side, front) {
   if (!sp || !fp) return null;
   const poses = combine(sp, fp);
   const metrics = metricsOf(poses);
+  metrics.bar = barPathOf(poses, side.exercise);
 
   const sr = fullReps(side.reps), fr = fullReps(front.reps);
   const reps = [];
@@ -169,6 +204,7 @@ export function fuse3D(side, front) {
     const a = sideProfile(side, [sr[k]]), b = frontProfile(front, [fr[k]]);
     if (!a || !b) continue;
     const p = combine(a, b), m = metricsOf(p);
+    m.bar = barPathOf(p, side.exercise);
     reps.push({ index: k + 1, poses: p, metrics: m, issues: issuesOf(m) });
   }
 
@@ -194,6 +230,12 @@ export function fusedRows(m, repsList = []) {
   if (m.trunk) {
     rows.push({ key: 'trunk', issue: '상체가 옆으로 기울어요', label: '상체 옆 기울기', value: `${Math.abs(m.trunk.lateral).toFixed(0)}°`, ok: Math.abs(m.trunk.lateral) <= T.trunkLateral, reps: hit('trunk') });
     rows.push({ key: 'trunkFwd', label: '상체 앞 기울기', value: `${m.trunk.forward.toFixed(0)}°`, ok: null, reps: [] });
+  }
+  const pct = (v) => `${Math.round(Math.abs(v) * 100)}%`;
+  if (m.bar && isNum(m.bar.fwd)) {
+    rows.push({ key: 'barFwd', label: '바 앞뒤 흔들림', value: `다리 길이의 ${pct(m.bar.fwd)}`, ok: null, reps: [] });
+    rows.push({ key: 'barLat', label: '바 좌우 흔들림', value: `다리 길이의 ${pct(m.bar.lat)}`, ok: null, reps: [] });
+    if (isNum(m.bar.fromFoot)) rows.push({ key: 'barFoot', label: '발 가운데에서 최대', value: `${m.bar.fromFoot > 0 ? '앞' : '뒤'} ${pct(m.bar.fromFoot)}`, ok: null, reps: [] });
   }
   const kl = m.knee3D.L, kr = m.knee3D.R;
   if (isNum(kl) || isNum(kr)) rows.push({ key: 'knee3D', label: '무릎 각도', value: `${isNum(kl) ? kl.toFixed(0) : '–'}° / ${isNum(kr) ? kr.toFixed(0) : '–'}°`, ok: null, reps: [] });

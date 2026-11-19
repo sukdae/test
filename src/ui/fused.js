@@ -1,5 +1,5 @@
 // 둘 다 모드: 측면+정면 3D 합성 진단표와 돌려 볼 수 있는 3D 뼈대
-import { fusedRows, idealPoses, FUSE_N } from '../core/fuse3d.js';
+import { fusedRows, idealPoses, midFoot, barPoint, FUSE_N } from '../core/fuse3d.js';
 import { cssVar } from './draw.js';
 
 const $ = (id) => document.getElementById(id);
@@ -33,18 +33,30 @@ export function showFused(fz) {
   };
   render();
 
-  // 3D 뼈대: 대표 반복을 3초에 한 번 재생, 좌우로 끌면 회전
+  // 3D 뼈대: 대표 반복을 3초에 한 번 재생. 좌우로 끌면 몸을 돌리고, 위아래로 끌면 위·아래에서 본다.
   ac = new AbortController();
   const canvas = $('fusedCanvas'), ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  let yaw = 0.6, dragX = null;
-  canvas.addEventListener('pointerdown', (e) => { dragX = e.clientX; canvas.setPointerCapture(e.pointerId); }, { signal: ac.signal });
-  canvas.addEventListener('pointermove', (e) => { if (dragX === null) return; yaw += (e.clientX - dragX) * 0.01; dragX = e.clientX; }, { signal: ac.signal });
-  canvas.addEventListener('pointerup', () => { dragX = null; }, { signal: ac.signal });
+  const VIEWS = { base: [0.6, 0.25], front: [0, 0], side: [Math.PI / 2, 0], top: [0, Math.PI / 2] };
+  const PITCH = [-0.35, Math.PI / 2];
+  let [yaw, pitch] = VIEWS.base, drag = null;
+  const views = $('fusedViews'); // 예전 HTML이 캐시에 남아 있으면 없을 수 있음
+  const setView = (v) => { [yaw, pitch] = VIEWS[v]; views?.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.v === v))); };
+  const clearView = () => views?.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-selected', 'false'));
+  canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); }, { signal: ac.signal });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    yaw += (e.clientX - drag.x) * 0.01;
+    pitch = Math.min(PITCH[1], Math.max(PITCH[0], pitch + (e.clientY - drag.y) * 0.01));
+    drag = { x: e.clientX, y: e.clientY }; clearView();
+  }, { signal: ac.signal });
+  canvas.addEventListener('pointerup', () => { drag = null; }, { signal: ac.signal });
+  views?.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) setView(b.dataset.v); }, { signal: ac.signal });
+  setView('base');
   $('fusedChips').addEventListener('click', (e) => { const b = e.target.closest('[data-r]'); if (b) { sel = Number(b.dataset.r); render(); } }, { signal: ac.signal });
-  const pitch = 0.25, LC = '#38bdf8', RC = '#fb923c', IC = cssVar('--c-ghost') || '#e879f9';
+  const LC = '#38bdf8', RC = '#fb923c', BC = '#facc15', IC = cssVar('--c-ghost') || '#e879f9';
   const ideal = idealPoses(fz, fz.exercise);
-  const showIdeal = $('fusedIdeal');
+  const showIdeal = $('fusedIdeal'), showBar = $('fusedBar');
   const start = performance.now();
   const loop = (now) => {
     raf = requestAnimationFrame(loop);
@@ -54,12 +66,13 @@ export function showFused(fz) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     const ph = ((now - start) / 3000) % 1;
-    const pose = cur().poses[Math.round(ph * (FUSE_N - 1))];
-    const s = h / 2.1, cx = w / 2, cy = h * 0.88;
+    const k = Math.round(ph * (FUSE_N - 1));
+    const pose = cur().poses[k];
+    const s = (h / 2.1) * (1 + 0.9 * Math.max(0, pitch - 0.6) / (Math.PI / 2 - 0.6)), cx = w / 2, cy = h * 0.5, CY = 0.85; // 몸 가운데 높이(다리 길이 0.85)를 화면 가운데에
     const proj = (p) => {
       const sx = p.x * Math.cos(yaw) + p.z * Math.sin(yaw);
       const d = -p.x * Math.sin(yaw) + p.z * Math.cos(yaw);
-      return { x: cx + sx * s, y: cy - (p.y * Math.cos(pitch) - d * Math.sin(pitch)) * s };
+      return { x: cx + sx * s, y: cy - ((p.y - CY) * Math.cos(pitch) - d * Math.sin(pitch)) * s };
     };
     // 바닥 격자
     ctx.strokeStyle = cssVar('--border') || '#334155'; ctx.lineWidth = 1;
@@ -83,6 +96,24 @@ export function showFused(fz) {
       line(ip.L.hip, ip.R.hip, IC, 2); line(ip.L.shoulder, ip.R.shoulder, IC, 2);
       ctx.restore();
     }
+    // 바 궤적 (추정): 대표 반복 전체 경로 + 지금 위치. 발 가운데 수직선은 위치 비교용 표시
+    const bar = showBar?.checked ? cur().metrics.bar : null;
+    if (bar?.path?.some(Boolean)) {
+      const mf = midFoot(cur().poses[0]);
+      if (mf) {
+        ctx.save(); ctx.setLineDash([3, 4]); line({ x: mf.x, y: 0, z: mf.z }, { x: mf.x, y: 1.9, z: mf.z }, cssVar('--muted') || '#94a3b8', 1.5); ctx.restore();
+      }
+      ctx.save(); ctx.strokeStyle = BC; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.globalAlpha = 0.85;
+      ctx.beginPath(); let pen = false;
+      for (const b of bar.path) { if (!b) { pen = false; continue; } const B = proj(b); if (pen) ctx.lineTo(B.x, B.y); else ctx.moveTo(B.x, B.y); pen = true; }
+      ctx.stroke();
+      // 바닥에 비친 그림자 (위에서 볼 때 앞뒤·좌우 흔들림이 잘 보이게)
+      ctx.globalAlpha = 0.35; ctx.beginPath(); pen = false;
+      for (const b of bar.path) { if (!b) { pen = false; continue; } const B = proj({ ...b, y: 0 }); if (pen) ctx.lineTo(B.x, B.y); else ctx.moveTo(B.x, B.y); pen = true; }
+      ctx.stroke(); ctx.restore();
+      const now3 = barPoint(pose, fz.exercise);
+      if (now3) { const B = proj(now3); ctx.fillStyle = BC; ctx.beginPath(); ctx.arc(B.x, B.y, 6, 0, Math.PI * 2); ctx.fill(); }
+    }
     for (const [S, color] of [['L', LC], ['R', RC]]) {
       const J = pose[S];
       line(J.shoulder, J.hip, color); line(J.hip, J.knee, color); line(J.knee, J.ankle, color); line(J.ankle, J.foot, color, 3);
@@ -94,7 +125,9 @@ export function showFused(fz) {
       const K = proj(k); ctx.fillStyle = color; ctx.beginPath(); ctx.arc(K.x, K.y, 5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.fillStyle = LC; ctx.fillText('● 왼쪽', 8, 16); ctx.fillStyle = RC; ctx.fillText('● 오른쪽', 8, 32);
-    if (ip) { ctx.fillStyle = IC; ctx.fillText('┄ 기준 자세', 8, 48); }
+    let ly = 48;
+    if (ip) { ctx.fillStyle = IC; ctx.fillText('┄ 기준 자세', 8, ly); ly += 16; }
+    if (bar?.path?.some(Boolean)) { ctx.fillStyle = BC; ctx.fillText('● 바 궤적 (추정)', 8, ly); }
   };
   raf = requestAnimationFrame(loop);
 }

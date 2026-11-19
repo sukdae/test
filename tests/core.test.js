@@ -11,7 +11,7 @@ import { getReference, IDEAL_SQUAT_FRONT } from '../src/core/exercises.js';
 import { buildCoaching, mergeCoaching, compareViews } from '../src/core/coach.js';
 import { josa } from '../src/core/signal.js';
 import { detectView } from '../src/core/landmarks.js';
-import { fuse3D, fusedRows, idealPoses } from '../src/core/fuse3d.js';
+import { fuse3D, fusedRows, idealPoses, barPoint } from '../src/core/fuse3d.js';
 
 export const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -311,6 +311,20 @@ test('3D 합성: 측면+정면 → 대표 반복과 지표', () => {
   assert(fuse3D(side, null) === null, 'needs both');
   const mixed = fuse3D(side, analyzeFront(generateFrontDemo({ reps: [{}, { cave: true }, {}] }), 'squat'));
   assert(mixed.reps[1].metrics.kneeToe.L > mixed.reps[0].metrics.kneeToe.L + 5, 'rep 2 knee turns inward');
+});
+
+test('3D 바 궤적: 스쿼트는 어깨, 데드리프트는 손목 위치, 몸 가운데·최저점에서 낮아짐', () => {
+  const front = analyzeFront(generateFrontDemo(), 'squat');
+  const sq = fuse3D(analyzeSession(generateDemo('squat'), 'squat'), front);
+  const path = sq.metrics.bar.path;
+  assert(path.length === 21 && path.filter(Boolean).length >= 18, 'path');
+  assert(Math.abs(path[0].x) < 0.05, `centered x ${path[0].x}`);
+  assert(path[10].y < path[0].y - 0.2, 'bar lower at bottom');
+  assert(Number.isFinite(sq.metrics.bar.fwd) && sq.reps.every((r) => r.metrics.bar), 'per-rep bar');
+  assert(fusedRows(sq.metrics, sq.reps).some((r) => r.key === 'barFwd'), 'row');
+  const dl = fuse3D(analyzeSession(generateDemo('deadlift'), 'deadlift'), front);
+  const top = barPoint(dl.poses[0], 'deadlift');
+  assert(top && top.y < sq.metrics.bar.path[0].y - 0.3, `wrist below shoulder: ${top?.y}`);
 });
 
 test('촬영 방향 자동 판정', () => {

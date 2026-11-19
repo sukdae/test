@@ -156,8 +156,14 @@
         <h2>3D <span class="tag">추정</span> <small class="muted">끌어서 회전</small></h2>
         <div id="fusedChips" class="chips" role="tablist" aria-label="3D 반복 선택"></div>
         <ul id="fusedSummary" class="fused-summary"></ul>
-        <canvas id="fusedCanvas" class="fused-canvas"></canvas>
-        <label class="share-opt"><input type="checkbox" id="fusedIdeal" checked> <span class="sw sw-ghost"></span>기준 자세 같이 보기</label>
+        <canvas id="fusedCanvas" class="fused-canvas" aria-label="3D 자세. 끌어서 돌려 보기"></canvas>
+        <div id="fusedViews" class="chips fused-views" role="tablist" aria-label="보는 방향">
+          <button data-v="base">기본</button><button data-v="front">앞</button><button data-v="side">옆</button><button data-v="top">위</button>
+        </div>
+        <div class="fused-opts">
+          <label class="share-opt"><input type="checkbox" id="fusedIdeal" checked> <span class="sw sw-ghost"></span>기준 자세</label>
+          <label class="share-opt"><input type="checkbox" id="fusedBar" checked> <span class="sw sw-bar"></span>바 궤적</label>
+        </div>
         <div id="fusedTable"></div>
       </div>
 
