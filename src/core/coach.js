@@ -23,6 +23,14 @@ const DO = {
   'balance-back': '뒤꿈치에만 기대지 말고 발 중앙에 체중을 두세요',
   'dl-bounce': '매 반복 바닥에서 잠깐 멈췄다 당기세요',
   'dl-back-trend': '지치면 무게나 반복 수를 줄여 등 모양을 유지하세요',
+  // 친업·딥스
+  'cu-top': '턱이 바를 넘을 때까지 당기세요',
+  'cu-hang': '매 반복 팔을 끝까지 펴고 매달렸다 당기세요',
+  'cu-kip': '다리를 모으고 몸을 곧게 고정한 채 당기세요',
+  'cu-fast-lower': '1초 이상에 걸쳐 천천히 내려오세요',
+  'dip-shallow': '위팔이 바닥과 평행해질 때까지 내려가세요',
+  'dip-lockout': '위에서 팔을 끝까지 펴며 마무리하세요',
+  'dip-fast-lower': '1초 이상에 걸쳐 천천히 내려가세요',
   // 정면
   'knee-cave': '무릎을 발끝 방향으로 밀어 벌리세요',
   'hip-shift': '양발에 체중을 고르게 싣고 앉으세요',
@@ -50,6 +58,9 @@ const GOOD = {
   'good-core-front': '좌우 코어 안정',
   'good-base': '양발 고르게 지탱',
   'good-balance': '무게중심 발 중앙',
+  'good-top': '턱이 바 위까지',
+  'good-hang': '팔 끝까지 폄',
+  'good-swing': '반동 없음',
 };
 
 const repsText = (f) => (f.total > 1 && f.reps.length && f.reps.length < f.total ? `${f.reps.join(', ')}회차` : f.total > 1 ? '모든 반복' : '');

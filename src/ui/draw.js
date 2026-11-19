@@ -1,7 +1,7 @@
 // 캔버스에 스켈레톤·기준 동작 고스트 그리기, 근육 도식 SVG
 import { EDGES, SIDES, VIS_MIN } from '../core/landmarks.js';
 import { referenceAngles } from '../core/exercises.js';
-import { chainFromAngles } from '../core/geometry.js';
+import { chainFromAngles, upperChain } from '../core/geometry.js';
 import { isNum } from '../core/signal.js';
 import { backPoints } from '../core/back.js';
 
@@ -75,6 +75,29 @@ export function drawGhost(ctx, exId, phase, ankle, body, W, H, profile = null) {
   ctx.stroke();
   ctx.setLineDash([]);
   for (const p of [c.knee, c.hip, c.shoulder]) { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * scale, 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath(); ctx.arc(c.head.x, c.head.y, 26 * scale, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// 상체 종목 기준 동작 고스트: 손목(바·손잡이)에 고정하고 기준 관절 각도로 팔·몸통을 그린다.
+export function drawGhostUpper(ctx, exId, phase, wrist, body, W, H) {
+  if (!wrist || !isNum(wrist.x) || !isNum(body.forearm)) return;
+  const c = upperChain(referenceAngles(exId, phase), wrist, body, body.facing);
+  const scale = Math.max(W, H) / 1000;
+  ctx.save();
+  ctx.strokeStyle = cssVar('--c-ghost') || '#e879f9';
+  ctx.fillStyle = ctx.strokeStyle;
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = Math.max(3, 7 * scale);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.setLineDash([14 * scale, 10 * scale]);
+  ctx.beginPath();
+  ctx.moveTo(c.wrist.x, c.wrist.y); ctx.lineTo(c.elbow.x, c.elbow.y); ctx.lineTo(c.shoulder.x, c.shoulder.y); ctx.lineTo(c.hip.x, c.hip.y);
+  ctx.moveTo(c.shoulder.x, c.shoulder.y); ctx.lineTo(c.head.x, c.head.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  for (const p of [c.elbow, c.shoulder, c.hip]) { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * scale, 0, Math.PI * 2); ctx.fill(); }
   ctx.globalAlpha = 0.5;
   ctx.beginPath(); ctx.arc(c.head.x, c.head.y, 26 * scale, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
@@ -430,11 +453,16 @@ export function drawFrontMuscles(ctx, lm, muscles, effort, W, H) {
 // ---- 근육 부하 도식 (앞/뒤) ----
 const REGIONS = {
   front: {
+    pecs: [[-10, 52, 9, 6], [10, 52, 9, 6]],
+    biceps: [[-30, 60, 4, 10], [30, 60, 4, 10]],
     quads: [[-11.5, 140, 8, 22], [11.5, 140, 8, 22]],
     adductors: [[-4.5, 128, 3.2, 12], [4.5, 128, 3.2, 12]],
   },
   back: {
     traps: [[0, 46, 18, 9]],
+    infraspinatus: [[-11, 56, 6, 5], [11, 56, 6, 5]],
+    lats: [[-14, 76, 6, 15], [14, 76, 6, 15]],
+    triceps: [[-30, 60, 4, 10], [30, 60, 4, 10]],
     erectors: [[-5.5, 88, 4, 17], [5.5, 88, 4, 17]],
     glutes: [[-10, 114, 10, 9], [10, 114, 10, 9]],
     hamstrings: [[-11.5, 146, 7, 18], [11.5, 146, 7, 18]],

@@ -1,8 +1,9 @@
 // 기준 동작 비교: DTW로 속도 차이를 맞춘 뒤 구간별 각도 차이를 계산
-import { referenceAngles } from './exercises.js';
+import { referenceAngles, EXERCISES } from './exercises.js';
 import { mean } from './signal.js';
 
 export const FEATURES = ['knee', 'hip', 'trunk'];
+export const featuresOf = (exId) => EXERCISES[exId]?.features || FEATURES;
 export const PHASES = { descent: [0, 0.4], bottom: [0.4, 0.6], ascent: [0.6, 1.0001] };
 export const PHASE_KO = { descent: '내려갈 때', bottom: '최저점에서', ascent: '올라올 때' };
 
@@ -32,10 +33,12 @@ export function alignRep(exId, rep, s, M = 50, refProfile = null) {
   const [a, b] = rep.partialStart ? [0.5, 1] : rep.partialEnd ? [0, 0.5] : [0, 1];
   const refPhase = Array.from({ length: M }, (_, j) => a + (b - a) * j / (M - 1));
   const ref = refPhase.map((p) => referenceAngles(exId, p, refProfile));
+  const F = featuresOf(exId);
+  const pick = (o) => Object.fromEntries(F.map((f) => [f, o[f]]));
   const user = [];
-  for (let k = rep.start; k <= rep.end; k++) user.push({ knee: s.knee[k], hip: s.hip[k], trunk: s.trunk[k] });
+  for (let k = rep.start; k <= rep.end; k++) user.push(Object.fromEntries(F.map((f) => [f, s[f][k]])));
 
-  const d = (u, r) => Math.hypot(u.knee - r.knee, u.hip - r.hip, u.trunk - r.trunk);
+  const d = (u, r) => Math.hypot(...F.map((f) => u[f] - r[f]));
   const { path } = dtw(user, ref, d);
 
   // 사용자 프레임별 기준 위상 (고스트 표시용)
@@ -44,12 +47,12 @@ export function alignRep(exId, rep, s, M = 50, refProfile = null) {
   const phase = acc.map(([sum, c]) => sum / c);
 
   // 기준 위상별로 정렬된 사용자 값
-  const byRef = refPhase.map(() => ({ knee: 0, hip: 0, trunk: 0, n: 0 }));
-  for (const [i, j] of path) { for (const f of FEATURES) byRef[j][f] += user[i][f]; byRef[j].n++; }
+  const byRef = refPhase.map(() => ({ ...Object.fromEntries(F.map((f) => [f, 0])), n: 0 }));
+  for (const [i, j] of path) { for (const f of F) byRef[j][f] += user[i][f]; byRef[j].n++; }
   const aligned = byRef.map((o, j) => ({
     phase: refPhase[j],
-    user: { knee: o.knee / o.n, hip: o.hip / o.n, trunk: o.trunk / o.n },
-    ref: { knee: ref[j].knee, hip: ref[j].hip, trunk: ref[j].trunk },
+    user: Object.fromEntries(F.map((f) => [f, o[f] / o.n])),
+    ref: pick(ref[j]),
   }));
 
   const diffs = {};
@@ -57,30 +60,33 @@ export function alignRep(exId, rep, s, M = 50, refProfile = null) {
     const pts = aligned.filter((x) => x.phase >= lo && x.phase < hi);
     if (!pts.length) continue;
     diffs[name] = {};
-    for (const f of FEATURES) diffs[name][f] = mean(pts.map((x) => x.user[f] - x.ref[f]));
+    for (const f of F) diffs[name][f] = mean(pts.map((x) => x.user[f] - x.ref[f]));
   }
-  const meanAbsDiff = mean(aligned.flatMap((x) => FEATURES.map((f) => Math.abs(x.user[f] - x.ref[f]))));
+  const meanAbsDiff = mean(aligned.flatMap((x) => F.map((f) => Math.abs(x.user[f] - x.ref[f]))));
 
   return { phase, aligned, diffs, meanAbsDiff, phaseRange: [a, b] };
 }
 
-export function diffText(phase, f, d, label = '기준') {
+export function diffText(phase, f, d, label = '기준', phaseKo = PHASE_KO) {
   const a = Math.round(Math.abs(d));
-  const when = PHASE_KO[phase];
+  const when = phaseKo[phase];
   if (f === 'trunk') return `${when} 상체가 ${label}보다 ${a}° ${d > 0 ? '더 앞으로 기울어요' : '더 세워져 있어요'}`;
+  if (f === 'elbow') return `${when} 팔꿈치가 ${label}보다 ${a}° ${d > 0 ? '덜 굽혀져 있어요' : '더 굽혀져 있어요'}`;
+  if (f === 'shoulder') return `${when} 위팔이 ${label}보다 ${a}° ${d > 0 ? '더 앞·위로 들려 있어요' : '더 뒤로 젖혀져 있어요'}`;
   if (f === 'knee') return `${when} 무릎이 ${label}보다 ${a}° ${d > 0 ? '덜 굽혀져 있어요' : '더 굽혀져 있어요'}`;
   return `${when} 엉덩이(고관절)가 ${label}보다 ${a}° ${d > 0 ? '덜 접혀 있어요' : '더 접혀 있어요'}`;
 }
 
 // 모든 반복을 평균해 차이가 큰 항목을 뽑는다.
-export function topDiffs(reps, { min = 8, limit = 3, label = '기준' } = {}) {
+export function topDiffs(reps, { min = 8, limit = 3, label = '기준', phaseKo = PHASE_KO } = {}) {
   const out = [];
+  const F = [...new Set(reps.flatMap((r) => Object.values(r.diffs || {}).flatMap((o) => Object.keys(o))))];
   for (const phase of Object.keys(PHASES)) {
-    for (const f of FEATURES) {
+    for (const f of F.length ? F : FEATURES) {
       const vals = reps.map((r) => r.diffs?.[phase]?.[f]).filter((v) => typeof v === 'number');
       if (!vals.length) continue;
       const d = mean(vals);
-      if (Math.abs(d) >= min) out.push({ phase, feature: f, diff: d, text: diffText(phase, f, d, label) });
+      if (Math.abs(d) >= min) out.push({ phase, feature: f, diff: d, text: diffText(phase, f, d, label, phaseKo) });
     }
   }
   return out.sort((x, y) => Math.abs(y.diff) - Math.abs(x.diff)).slice(0, limit);

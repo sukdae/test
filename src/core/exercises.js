@@ -45,6 +45,50 @@ export const EXERCISES = {
     ],
     templateNote: '컨벤셔널 데드리프트 기준 자세(3단계 순서·스티킹 포인트는 논문, 나머지는 초깃값)',
   },
+  // ---- 상체 맨몸 종목 (어시스트 머신 포함) ----
+  // 관절: elbow = 팔꿈치 안쪽 각도(180 = 완전히 폄), shoulder = 몸통 아래 방향 대비 위팔 각도(+ 앞·위로 듦, − 뒤로 젖힘),
+  //       trunk = 상체 기울기(수직 기준, + 앞으로). 손은 바·손잡이에 고정되어 있어 기준 자세는 손목에서부터 그린다.
+  chinup: {
+    id: 'chinup',
+    name: '친업',
+    badge: '베타',
+    kind: 'upper',
+    desc: '옆에서 바와 몸 전체가 보이게 촬영하세요. 어시스트 머신도 돼요.',
+    repSignal: 'elbow',
+    // 꼭대기 −50° 아래로 굽히면 반복, 꼭대기 −35° 위로 펴면 끝. 덜 편 반복(예: 138°)·덜 당긴 반복(예: 110°)도 셀 수 있게 [초깃값]
+    repDrop: 50, repRise: 35,
+    features: ['elbow', 'shoulder', 'trunk'],
+    phaseKo: { descent: '당길 때', bottom: '가장 높이 당겼을 때', ascent: '내려올 때' },
+    // 위상 0 = 매달림 → 0.5 = 가장 높이 당김 → 1 = 다시 매달림 (내려오는 구간은 거꾸로)
+    //   팔꿈치 움직임 범위 약 100°(친업 100.6 ± 14.5°) [논문 50] → 매달림 170°(초깃값)에서 70°
+    //   어깨·상체 값은 확인한 논문에 수치가 없어 [초깃값]
+    keys: [
+      [0.5, { elbow: 70, shoulder: 35, trunk: -10 }],
+      [1.0, { elbow: 170, shoulder: 165, trunk: 0 }],
+    ],
+    templateNote: '친업 기준 자세(팔꿈치 움직임 범위는 논문, 나머지는 초깃값)',
+  },
+  dip: {
+    id: 'dip',
+    name: '딥스',
+    badge: '베타',
+    kind: 'upper',
+    desc: '옆에서 손잡이와 몸 전체가 보이게 촬영하세요. 어시스트 머신도 돼요.',
+    repSignal: 'elbow',
+    // 꼭대기 −40° 아래로 굽히면 반복, 꼭대기 −30° 위로 펴면 끝. 얕은 반복(예: 110°)·덜 편 반복(예: 138°)도 셀 수 있게 [초깃값]
+    repDrop: 40, repRise: 30,
+    features: ['elbow', 'shoulder', 'trunk'],
+    // 위상 0 = 팔 편 위 자세 → 0.5 = 최저점 → 1 = 다시 위 (거꾸로 재생)
+    //   바 딥 실험 평균(경험자 15명, 지치기 전) [논문 52 표 1]:
+    //     최저점(어깨가 가장 젖혀진 순간): 어깨 신전 67.7°, 팔꿈치 굽힘 115.9°(= 안쪽 각도 64°), 상체 기울기 30.3°
+    //     끝 자세: 어깨 신전 3.5°, 팔꿈치 굽힘 17.4°(= 163°), 상체 기울기 17.7°
+    //   논문 각도는 3D 모션캡처 값이라 앱의 2D 측면 각도와 정의가 조금 다를 수 있음
+    keys: [
+      [0.5, { elbow: 64, shoulder: -68, trunk: 30 }],
+      [1.0, { elbow: 163, shoulder: -4, trunk: 18 }],
+    ],
+    templateNote: '바 딥 기준 자세(McKenzie 외 2022 실험 평균)',
+  },
 };
 
 export const bell = (p) => (1 - Math.cos(2 * Math.PI * Math.min(1, Math.max(0, p)))) / 2;
@@ -104,9 +148,20 @@ export const IDEAL_SQUAT_FRONT = {
   },
 };
 
+const IDEAL_CHINUP = {
+  id: 'ideal', name: '기준 자세 (논문 일부 + 초깃값)', short: '기준',
+  note: '친업 — 팔꿈치 움직임 범위(Youdas 외 2010). 매달림·당김 끝 자세의 나머지 각도는 초깃값',
+};
+const IDEAL_DIP = {
+  id: 'ideal', name: '논문 기반 기준 자세', short: '기준',
+  note: '바 딥 — 최저점·끝 자세 관절 각도 실험 평균(McKenzie 외 2022)',
+};
+
 export const REFERENCES = {
   squat: [IDEAL_SQUAT],
   deadlift: [IDEAL_DEADLIFT],
+  chinup: [IDEAL_CHINUP],
+  dip: [IDEAL_DIP],
 };
 
 // 예전에 저장된 기준 id → 현재 id
@@ -125,12 +180,12 @@ function keyAngles(keys, p) {
   if (q <= keys[0][0]) return { ...keys[0][1] };
   const [qa, A] = keys[Math.max(0, i - 1)], [qb, B] = keys[i];
   const u = qb > qa ? (q - qa) / (qb - qa) : 0, e = u * u * (3 - 2 * u);
-  const mix = (k) => A[k] + (B[k] - A[k]) * e;
-  return { shin: mix('shin'), knee: mix('knee'), trunk: mix('trunk') };
+  return Object.fromEntries(Object.keys(A).map((k) => [k, A[k] + (B[k] - A[k]) * e]));
 }
 
 export function referenceAngles(exId, p, ref = null) {
   if (ref?.curves) return curveAngles(ref, p);
+  if (EXERCISES[exId].kind === 'upper') return keyAngles(EXERCISES[exId].keys, p);
   if (EXERCISES[exId].keys) {
     const { shin, knee, trunk } = keyAngles(EXERCISES[exId].keys, p);
     const thigh = shin - (180 - knee);

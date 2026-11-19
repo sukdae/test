@@ -1,5 +1,5 @@
 // '나 vs 기준' 비교표와 리듬 비교
-import { referenceAngles } from '../core/exercises.js';
+import { referenceAngles, EXERCISES } from '../core/exercises.js';
 import { isNum, josa } from '../core/signal.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -11,6 +11,7 @@ const fmtThigh = (v) => (!isNum(v) ? '–' : `${v > 0 ? '+' : '−'}${Math.round
 export function referenceMetrics(exId, profile) {
   if (profile?.metrics) return profile.metrics;
   const b = referenceAngles(exId, 0.5, profile), top = referenceAngles(exId, 0, profile);
+  if (EXERCISES[exId].kind === 'upper') return { minElbow: b.elbow, topElbow: top.elbow, shoulderExt: -b.shoulder, maxTrunk: Math.max(b.trunk, top.trunk) };
   return { thighAboveParallel: 90 + b.thigh, minKnee: b.knee, minHip: b.hip, maxTrunk: b.trunk, topHip: top.hip };
 }
 
@@ -30,6 +31,20 @@ export function renderVersus(el, result, profile) {
   const mt = result.tempo || {}, rt = ref?.tempo || {};
   const rows = [];
   const row = (name, a, b, fmt, opt) => rows.push(`<tr><th>${name}</th><td>${fmt(a)}</td><td>${fmt(b)}</td>${diffCell(a, b, opt)}</tr>`);
+  if (EXERCISES[result.exercise].kind === 'upper') {
+    const chin = result.exercise === 'chinup';
+    row(chin ? '가장 높이 당겼을 때 팔꿈치' : '최저점 팔꿈치 각도', me.minElbow, rm.minElbow, fmtDeg);
+    row(chin ? '매달림 팔꿈치' : '위 자세 팔꿈치', me.topElbow, rm.topElbow, fmtDeg);
+    if (!chin) row('최저점 어깨 신전<small>위팔이 몸통 뒤로</small>', me.shoulderExt, rm.shoulderExt, fmtDeg);
+    if (!chin) row('최대 상체 기울기', me.maxTrunk, rm.maxTrunk, fmtDeg);
+    el.innerHTML = `
+    <table class="vs">
+      <thead><tr><th></th><th>나</th><th>${esc(label)}</th><th>차이</th></tr></thead>
+      <tbody>${rows.join('')}</tbody>
+    </table>
+    <p class="sub">${esc(ref?.note || '')}</p>`;
+    return;
+  }
   if (result.exercise === 'squat') {
     row('깊이<small>허벅지, 0°=평행 · −는 평행 아래</small>', me.thighAboveParallel, rm.thighAboveParallel, fmtThigh, { fmt: (d) => (d > 0 ? `${Math.round(d)}° 얕음` : `${Math.round(-d)}° 깊음`) });
   } else {

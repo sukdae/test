@@ -17,12 +17,13 @@
   - `fuse3d.js` 둘 다 모드 3D 합성: 반복 위상으로 측면(z,y)+정면(x) 대표 반복 → `fusedRows` 진단표. `barPathOf` 바 궤적(정보만, 판정 없음). UI는 `src/ui/fused.js`
   - 정면 기준 자세 `IDEAL_SQUAT_FRONT`(exercises.js) + `compareFrontIdeal`(front.js), 고스트 `drawFrontGhost`(draw.js)
   - 측면 무게중심 근사 `comOnFoot`(analyze.js) → `comShift`(서 있을 때 대비), 판정 `balance-fwd/back`(feedback.js), 표시 `drawBalance`. 데드리프트는 바벨 무게 입력 시에만. 무게 입력 `load {bodyKg, barKg}` → `analyzeSession(..., { load })`, `cleanLoad`
+  - `upper.js` 친업·딥스(`kind: 'upper'`) 측면 분석: `analyzeSession`이 넘겨줌. 각도 `upperAngles`(팔꿈치·어깨·상체·엉덩이), 규칙 `UPPER_THRESHOLDS`, 근육 고정 목록. 기준 자세는 손목 고정 `upperChain`(geometry.js) → `drawGhostUpper`. 비교 관절은 종목별 `features`(compare.js `featuresOf`)
   - `back.js` 세그멘테이션 마스크로 등 곡률(실험), `geometry.js`/`signal.js`/`landmarks.js` 유틸, `synthetic.js` 측면·정면 합성 데모
 - `src/ui/` — 브라우저 전용: `pose.js`(MediaPipe 래퍼, 유일한 인식 계층), `process.js`(영상→프레임), `capture.js`(카메라), `result.js`(측면 결과), `frontResult.js`(정면 결과), `versus.js`(나 vs 기준 표), `draw.js`(오버레이·근육 도식), `charts.js`, `history.js`, `storage.js`(IndexedDB+localStorage)
 - `src/ui/judge.js` 판정 평가(맞아요/틀렸어요/놓친 실수) → localStorage `formcheck-labels`, 설정에서 CSV 내보내기
 - `src/app.js` 화면 전환. 촬영 방향 `state.mode` = side/front/both, 둘 다는 `state.pair`로 측면→정면 순서.
 - `index.html` 모든 화면(section `view-*`). 결과 화면은 `data-view=side|front`로 `.side-only`/`.front-only` 전환.
-- `docs/참고문헌.md` 확인된 논문 11편과 앱 반영 내역.
+- `docs/참고문헌.md` 확인된 논문 목록과 앱 반영 내역.
 
 ## 규칙
 - 기준값은 논문 근거가 있으면 `[논문 n]`, 없으면 `[초깃값]`으로 주석. 확인 안 된 출처는 넣지 않음.

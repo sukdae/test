@@ -17,12 +17,12 @@ export function sessionItem(s) {
   const m = s.summary || {};
   const fm = s.frontSummary;
   const modeKo = s.mode === 'both' ? '측면+정면' : s.mode === 'front' ? '정면' : '측면';
-  const key = !s.summary && fm ? `무릎 간격 ${isNum(fm.kneeRatio) ? Math.round(fm.kneeRatio * 100) + '%' : '–'}` : s.exercise === 'squat' ? `허벅지 수평 기준 ${isNum(m.thighAboveParallel) ? (m.thighAboveParallel > 0 ? '+' : '') + Math.round(m.thighAboveParallel) + '°' : '–'}` : `최고점 엉덩이 ${isNum(m.topHip) ? Math.round(m.topHip) + '°' : '–'}`;
+  const key = !s.summary && fm ? `무릎 간격 ${isNum(fm.kneeRatio) ? Math.round(fm.kneeRatio * 100) + '%' : '–'}` : s.exercise === 'chinup' ? `매달림 팔꿈치 ${isNum(m.topElbow) ? Math.round(m.topElbow) + '°' : '–'}` : s.exercise === 'dip' ? `최저점 팔꿈치 ${isNum(m.minElbow) ? Math.round(m.minElbow) + '°' : '–'}` : s.exercise === 'squat' ? `허벅지 수평 기준 ${isNum(m.thighAboveParallel) ? (m.thighAboveParallel > 0 ? '+' : '') + Math.round(m.thighAboveParallel) + '°' : '–'}` : `최고점 엉덩이 ${isNum(m.topHip) ? Math.round(m.topHip) + '°' : '–'}`;
   return `
   <div class="session" data-id="${esc(s.id)}">
     <button class="session-main" data-open="${esc(s.id)}">
       <b>${esc(ex?.name ?? s.exercise)} · ${m.reps ?? fm?.reps ?? 0}회 <span class="tag">${modeKo}</span></b>
-      <small>${fmtDate(s.date)} · ${key}${s.load?.barKg > 0 ? ` · ${s.load.barKg}kg` : ''}${s.video ? ' · 🎞' : ''}</small>
+      <small>${fmtDate(s.date)} · ${key}${s.load?.barKg > 0 ? ` · ${['chinup', 'dip'].includes(s.exercise) ? '보조 ' : ''}${s.load.barKg}kg` : ''}${s.video ? ' · 🎞' : ''}</small>
       ${s.topIssue ? `<small class="issue">⚠︎ ${esc(s.topIssue)}</small>` : '<small class="ok-text">✓ 큰 문제 없음</small>'}
     </button>
     <button class="icon-btn del" data-del="${esc(s.id)}" aria-label="삭제">🗑</button>

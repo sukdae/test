@@ -12,6 +12,8 @@ import { buildCoaching, mergeCoaching, compareViews } from '../src/core/coach.js
 import { josa } from '../src/core/signal.js';
 import { detectView } from '../src/core/landmarks.js';
 import { fuse3D, fusedRows, idealPoses, barPoint } from '../src/core/fuse3d.js';
+import { upperAngles } from '../src/core/upper.js';
+import { upperChain } from '../src/core/geometry.js';
 
 export const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -325,6 +327,55 @@ test('3D 바 궤적: 스쿼트는 어깨, 데드리프트는 손목 위치, 몸 
   const dl = fuse3D(analyzeSession(generateDemo('deadlift'), 'deadlift'), front);
   const top = barPoint(dl.poses[0], 'deadlift');
   assert(top && top.y < sq.metrics.bar.path[0].y - 0.3, `wrist below shoulder: ${top?.y}`);
+});
+
+test('상체 기하: 기준 각도 → 손목 고정 팔·몸통 → 각도 왕복이 일치 (양 방향)', () => {
+  const body = { forearm: 140, upperArm: 165, torso: 290, neck: 80, thigh: 230, shin: 220 };
+  for (const f of [1, -1]) {
+    for (const a of [{ elbow: 64, shoulder: -68, trunk: 30 }, { elbow: 170, shoulder: 165, trunk: 0 }, { elbow: 70, shoulder: 35, trunk: -10 }]) {
+      const c = upperChain(a, { x: 400, y: 300 }, body, f, { hip: 150, knee: 120 });
+      const m = upperAngles(c, f);
+      for (const k of ['elbow', 'shoulder', 'trunk']) assert(Math.abs(m[k] - a[k]) < 1e-6, `f=${f} ${k}: ${m[k]} vs ${a[k]}`);
+      assert(Math.abs(m.hip - 150) < 1e-6, `hip ${m.hip}`);
+    }
+  }
+});
+
+test('친업 데모: 5회, 턱 높이·매달림·몸 반동 감지', () => {
+  const res = analyzeSession(generateDemo('chinup'), 'chinup');
+  assert(res.reps.length === 5, `reps=${res.reps.length}`);
+  const by = Object.fromEntries(res.feedback.map((f) => [f.id, f.reps.join(',')]));
+  assert(by['cu-top'] === '3', `top ${by['cu-top']}`);
+  assert(by['cu-kip'] === '4', `kip ${by['cu-kip']}`);
+  assert(by['cu-hang'] === '5', `hang ${by['cu-hang']}`);
+  assert(res.reps[0].meanAbsDiff < 3, `ref match ${res.reps[0].meanAbsDiff}`);
+  const ph = res.reps[0].phase;
+  assert(ph.every((p, i) => i === 0 || p >= ph[i - 1] - 1e-9), 'phase monotonic');
+});
+
+test('친업: 팔 관절점이 화면 끝에 걸려 아래팔이 짧아지는 프레임은 팔 값만 버리고 메움 (반복이 둘로 안 나뉨)', () => {
+  const demo = generateDemo('chinup', { fps: 15 });
+  const clean = analyzeSession(generateDemo('chinup', { fps: 15 }), 'chinup');
+  let hit = 0;
+  demo.frames.forEach((f, i) => {
+    if (clean.series.elbow[i] > 100 || i % 4 === 0) return;
+    hit++;
+    for (const [w, e] of [[15, 13], [16, 14]]) { f.lm[w].x += (f.lm[e].x - f.lm[w].x) * 0.8; f.lm[w].y += (f.lm[e].y - f.lm[w].y) * 0.8; }
+  });
+  const res = analyzeSession(demo, 'chinup');
+  assert(hit > 10, `hit ${hit}`);
+  assert(res.reps.length === clean.reps.length, `reps ${res.reps.length} vs ${clean.reps.length}`);
+});
+
+test('딥스 데모: 5회, 얕음·위에서 덜 폄 감지, 보조 무게로 실제 무게 계산', () => {
+  const res = analyzeSession(generateDemo('dip'), 'dip', { load: { bodyKg: 70, barKg: 25 } });
+  assert(res.reps.length === 5, `reps=${res.reps.length}`);
+  const by = Object.fromEntries(res.feedback.map((f) => [f.id, f.reps.join(',')]));
+  assert(by['dip-shallow'] === '3', `shallow ${by['dip-shallow']}`);
+  assert(by['dip-lockout'] === '5', `lockout ${by['dip-lockout']}`);
+  assert(!by['dip-deep'], 'normal depth is not too deep');
+  assert(res.feedback.find((f) => f.id === 'assist-load')?.title.includes('45kg'), 'effective load');
+  assert(Math.abs(res.reps[0].metrics.shoulderExt - 68) < 3, `shoulder ext ${res.reps[0].metrics.shoulderExt}`);
 });
 
 test('촬영 방향 자동 판정', () => {

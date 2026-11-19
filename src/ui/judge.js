@@ -19,6 +19,8 @@ export function clearLabels() { try { localStorage.removeItem(KEY); } catch { /*
 const MISSED = {
   squat: ['깊이가 얕음', '무릎이 안쪽으로 모임', '뒤꿈치 들림', '엉덩이가 먼저 올라옴', '상체가 너무 숙여짐', '허리가 굽음', '몸이 한쪽으로 쏠림', '무게중심이 앞/뒤로 쏠림'],
   deadlift: ['마무리에서 덜 폄', '끝에서 뒤로 젖힘', '허리가 굽음', '바가 몸에서 멀어짐', '무릎을 너무 굽힘', '바닥에서 튕김', '몸이 한쪽으로 쏠림'],
+  chinup: ['턱이 바 아래', '매달림에서 덜 폄', '몸 반동', '어깨가 으쓱 올라감', '내려올 때 툭 떨어짐', '몸이 한쪽으로 기울어짐'],
+  dip: ['깊이가 얕음', '너무 깊음(어깨 부담)', '위에서 덜 폄', '어깨가 으쓱 올라감', '팔꿈치가 옆으로 벌어짐', '내려갈 때 너무 빠름'],
 };
 
 let ctx = null; // { key, result, view }
@@ -62,7 +64,7 @@ export function attachJudging(result, view) {
         <button data-v="wrong" aria-pressed="${v === 'wrong'}">틀렸어요</button>
       </div>`);
   });
-  const ex = result.exercise === 'deadlift' ? 'deadlift' : 'squat';
+  const ex = MISSED[result.exercise] ? result.exercise : 'squat';
   $('missedSel').innerHTML = MISSED[ex].map((t) => `<option>${esc(t)}</option>`).join('') + '<option>기타</option>';
   $('missedBox').hidden = false;
   const missed = saved.filter((x) => x.verdict === 'missed').length;

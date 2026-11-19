@@ -8,12 +8,12 @@ import { percentile, isNum } from './signal.js';
 
 const NEAR_TOP = 4; // 꼭대기로 볼 범위(도)
 
-export function segmentReps(sig, t, { drop = 30, minDur = 0.5 } = {}) {
+export function segmentReps(sig, t, { drop = 30, minDur = 0.5, rise = null } = {}) {
   const n = sig.length;
   if (n < 3) return [];
   const top = percentile(sig, 0.9);
   if (!isNum(top)) return [];
-  const hi = top - Math.max(12, drop * 0.5); // 이 위로 올라오면 '서 있음'
+  const hi = top - (rise ?? Math.max(12, drop * 0.5)); // 이 위로 올라오면 '서 있음'
   const lo = top - drop;                       // 이 아래까지 내려가야 반복으로 인정
 
   const peakVal = (a, b) => { let m = -Infinity; for (let k = a; k <= b; k++) m = Math.max(m, sig[k]); return m; };

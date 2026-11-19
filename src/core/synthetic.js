@@ -4,13 +4,17 @@
 // 일부 반복에 일부러 자세 오류(얕은 깊이, 엉덩이 먼저 등)를 넣어 피드백이 나오게 합니다.
 // 화면에는 반드시 '예시(합성 데이터)'로 표시합니다.
 
-import { EXERCISES, bell } from './exercises.js';
-import { chainFromAngles } from './geometry.js';
+import { EXERCISES, bell, referenceAngles } from './exercises.js';
+import { chainFromAngles, upperChain } from './geometry.js';
 import { BACK_LEVELS } from './back.js';
 
 export const DEMO_REPS = {
   squat: [{}, {}, { depth: 0.55 }, { lean: 1.5, hipsFirst: true, round: true }, { heel: true }],
   deadlift: [{}, {}, { hipsFirst: true, round: true }, { endTrunk: 14 }, { endTrunk: -24 }],
+  // 친업: 3회 = 턱이 바까지 못 올라감, 4회 = 몸 반동, 5회 = 팔을 덜 폄 (덜 편 자세가 영상 끝까지 이어지도록 마지막에)
+  chinup: [{}, {}, { short: 40 }, { kip: 28 }, { hang: 138 }],
+  // 딥스: 3회 = 얕음, 5회 = 위에서 덜 폄
+  dip: [{}, {}, { shallow: 45 }, {}, { lockout: 138 }],
 };
 
 function mulberry32(a) {
@@ -39,7 +43,12 @@ function anglesAt(T, R, p, prevOff) {
   return { shin, thigh: shin - (180 - knee), trunk, heelLift: R.heel ? 0.05 * bell(p) : 0 };
 }
 
-export function generateDemo(exId, { fps = 30, W = 720, H = 1280, seed = 7, reps } = {}) {
+export function generateDemo(exId, opts = {}) {
+  if (EXERCISES[exId].kind === 'upper') return generateUpperDemo(exId, opts);
+  return generateLowerDemo(exId, opts);
+}
+
+function generateLowerDemo(exId, { fps = 30, W = 720, H = 1280, seed = 7, reps } = {}) {
   const T = EXERCISES[exId].template;
   const list = reps || DEMO_REPS[exId];
   const rnd = mulberry32(seed);
@@ -174,4 +183,70 @@ export function generateFrontDemo({ fps = 30, W = 720, H = 1280, seed = 11, reps
     frames.push({ t, lm });
   }
   return { frames, width: W, height: H, synthetic: true };
+}
+
+// ---- 상체 합성 데모 (친업·딥스) ----
+// 손목(바·손잡이)을 고정하고 기준 자세 각도에 반복별 오류를 섞는다.
+function generateUpperDemo(exId, { fps = 30, W = 720, H = 1280, seed = 7, reps } = {}) {
+  const list = reps || DEMO_REPS[exId];
+  const rnd = mulberry32(seed);
+  const noise = () => (rnd() - 0.5) * 4;
+  const facing = 1;
+  const body = { forearm: 140, upperArm: 165, torso: 290, neck: 80, thigh: 230, shin: 220 };
+  const chin = exId === 'chinup';
+  const wrist = chin ? { x: W * 0.5, y: H * 0.16 } : { x: W * 0.5, y: H * 0.52 };
+  const lead = 0.8, desc = 1.0, pause = 0.15, asc = 1.2, gap = 0.6;
+  const segs = [];
+  let time = lead;
+  list.forEach((R) => { segs.push({ R, t0: time, tb0: time + desc, tb1: time + desc + pause, t1: time + desc + pause + asc }); time += desc + pause + asc + gap; });
+  const frames = [];
+  for (let i = 0; ; i++) {
+    const t = i / fps;
+    if (t > time) break;
+    let R = {}, p = 0;
+    for (const sg of segs) {
+      if (t >= sg.t1) { R = sg.R; p = 1; continue; } // 쉬는 동안은 직전 반복의 끝 자세 유지
+      if (t >= sg.t0) { R = sg.R; p = t < sg.tb0 ? 0.5 * (t - sg.t0) / desc : t < sg.tb1 ? 0.5 : 0.5 + 0.5 * (t - sg.tb1) / asc; }
+      break;
+    }
+    const a = { ...referenceAngles(exId, p) };
+    const b = bell(p);
+    const top0 = referenceAngles(exId, 0);
+    if (R.short) a.elbow += R.short * b, a.shoulder += R.short * 1.2 * b; // 덜 당김
+    if (R.shallow) a.elbow += R.shallow * b, a.shoulder += R.shallow * 0.6 * b; // 덜 내려감
+    if (R.hang) a.elbow -= (top0.elbow - R.hang) * (1 - b); // 팔을 덜 폄
+    if (R.lockout) a.elbow -= (top0.elbow - R.lockout) * (1 - b);
+    const legs = chin
+      ? { hip: 175 - (R.kip ? R.kip * (1 + Math.sin(2 * Math.PI * p * 2)) : 0), knee: 170 }
+      : { hip: 160, knee: 100 };
+    const c = upperChain(a, wrist, body, facing, legs);
+    frames.push({ t, lm: buildUpperLandmarks(c, facing, W, H, noise) });
+  }
+  return { frames, width: W, height: H, synthetic: true };
+}
+
+function buildUpperLandmarks(c, s, W, H, noise) {
+  const P = (p) => ({ x: p.x + noise(), y: p.y + noise() });
+  const lm = new Array(33);
+  const set = (i, p, v) => { lm[i] = { x: p.x / W, y: p.y / H, v }; };
+  const near = { shoulder: 11, elbow: 13, wrist: 15, hip: 23, knee: 25, ankle: 27, heel: 29, foot: 31 };
+  const far = { shoulder: 12, elbow: 14, wrist: 16, hip: 24, knee: 26, ankle: 28, heel: 30, foot: 32 };
+  const pos = { ...c, heel: { x: c.ankle.x - s * 20, y: c.ankle.y + 15 }, foot: { x: c.ankle.x + s * 50, y: c.ankle.y + 20 } };
+  for (const k in near) {
+    const q = P(pos[k]);
+    set(near[k], q, 0.95);
+    set(far[k], { x: q.x + 6, y: q.y - 4 }, 0.6);
+  }
+  const hd = c.head;
+  set(0, P({ x: hd.x + s * 25, y: hd.y + 5 }), 0.95);
+  for (let i = 1; i <= 6; i++) set(i, P({ x: hd.x + s * 15, y: hd.y - 8 }), 0.9);
+  set(7, P({ x: hd.x - s * 5, y: hd.y }), 0.9);
+  set(8, P({ x: hd.x - s * 5 + 6, y: hd.y - 4 }), 0.5);
+  set(9, P({ x: hd.x + s * 20, y: hd.y + 22 }), 0.9);
+  set(10, P({ x: hd.x + s * 20, y: hd.y + 22 }), 0.9);
+  for (const [i, base] of [[17, 15], [19, 15], [21, 15], [18, 16], [20, 16], [22, 16]]) {
+    const b = lm[base];
+    lm[i] = { x: b.x + (s * 8) / W, y: b.y - 6 / H, v: b.v };
+  }
+  return lm;
 }

@@ -21,10 +21,21 @@ const TITLES = { onboarding: '시작하기', home: '폼 체크', capture: '촬�
 const VIEW_KO = { side: '측면', front: '정면' };
 const MODE_HINT = { side: '깊이 · 상체 · 뒤꿈치 · 리듬', front: '무릎 · 좌우 균형 · 체중 분배', both: '영상 2개를 한 번에 골라도 돼요 · 3D' };
 // 데드리프트는 베타: 기준 자세 일부만 논문 근거, 나머지는 초깃값 → 트레이너 피드백용
-const VISIBLE_EXERCISES = ['squat', 'deadlift'];
-const SIDE_ONLY = [];
-const BETA = { deadlift: '데드리프트는 베타예요. 기준 자세의 순서·일부 각도만 논문 근거가 있고 나머지는 초깃값이에요. 컨벤셔널 기준이에요.' };
-const MODE_HINT_EX = { deadlift: { side: '마무리 · 바닥 멈춤 · 등 · 3단계 순서', front: '스타일(컨벤셔널/스모) · 좌우 균형', both: '영상 2개를 한 번에 골라도 돼요 · 3D' } };
+const VISIBLE_EXERCISES = ['squat', 'deadlift', 'chinup', 'dip'];
+// 친업·딥스는 측면만 (정면·3D는 아직 없음)
+const SIDE_ONLY = ['chinup', 'dip'];
+const BETA = {
+  deadlift: '데드리프트는 베타예요. 기준 자세의 순서·일부 각도만 논문 근거가 있고 나머지는 초깃값이에요. 컨벤셔널 기준이에요.',
+  chinup: '친업은 베타예요. 팔꿈치 움직임 범위만 논문 근거가 있고, 턱이 바 위로·매달림 기준은 초깃값이에요. 어시스트 머신도 돼요.',
+  dip: '딥스는 베타예요. 기준 자세는 바 딥 실험 평균(McKenzie 외 2022)이고, 판정 경계는 그 평균·편차로 정한 초깃값이에요. 어시스트 머신도 돼요.',
+};
+const MODE_HINT_EX = {
+  deadlift: { side: '마무리 · 바닥 멈춤 · 등 · 3단계 순서', front: '스타일(컨벤셔널/스모) · 좌우 균형', both: '영상 2개를 한 번에 골라도 돼요 · 3D' },
+  chinup: { side: '턱 높이 · 매달림 · 몸 반동 · 속도' },
+  dip: { side: '깊이 · 위에서 펴기 · 어깨 젖힘 · 속도' },
+};
+// 상체 종목은 두 번째 무게 칸이 '어시스트 머신 보조 무게'
+const isUpper = (ex) => EXERCISES[ex]?.kind === 'upper';
 
 const settings0 = store.getSettings();
 const state = {
@@ -71,13 +82,15 @@ function renderHome() {
   const st = store.getSettings();
   $('bodyKg').value = st.bodyKg ?? '';
   $('barKg').value = st.barKg?.[state.exercise] ?? '';
+  $('barLabel').textContent = isUpper(state.exercise) ? '보조' : '바벨';
+  $('barKg').title = isUpper(state.exercise) ? '어시스트 머신 보조 무게' : '바벨 무게';
   const sideOnly = SIDE_ONLY.includes(state.exercise);
   if (sideOnly) state.mode = 'side';
   $('exSeg').querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.ex === state.exercise)));
   $('heroTitle').textContent = `${EXERCISES[state.exercise].name} 자세 분석`;
   $('viewMode').querySelectorAll('button').forEach((b) => { b.disabled = sideOnly && b.dataset.mode !== 'side'; });
   $('viewMode').querySelectorAll('button').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === state.mode)));
-  $('viewHint').textContent = sideOnly ? '측면만 · 베타' : (MODE_HINT_EX[state.exercise] || MODE_HINT)[state.mode];
+  $('viewHint').textContent = (MODE_HINT_EX[state.exercise] || MODE_HINT)[state.mode] || (sideOnly ? '측면만 · 베타' : '');
   store.listSessions().then((list) => {
     $('recentBlock').hidden = !list.length;
     $('recentList').innerHTML = list.slice(0, 3).map(sessionItem).join('');

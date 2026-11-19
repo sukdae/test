@@ -1,6 +1,7 @@
 // 결과 화면: 스켈레톤·기준 동작 오버레이 재생, 지표 카드, 피드백, 비교 그래프, 근육 도식
 import { EXERCISES, referenceAngles, getReference, REFERENCES } from '../core/exercises.js';
 import { analyzeSession } from '../core/analyze.js';
+import { UPPER_THRESHOLDS } from '../core/upper.js';
 import { phaseByTempo } from '../core/reference.js';
 import { renderVersus } from './versus.js';
 import { buildCoaching } from '../core/coach.js';
@@ -9,7 +10,7 @@ import { setSetting, getSettings } from './storage.js';
 import { topDiffs } from '../core/compare.js';
 import { toCSV } from '../core/analyze.js';
 import { isNum, mean, median, percentile, clamp } from '../core/signal.js';
-import { drawSkeleton, drawGhost, drawMuscles, drawFootContact, drawBalance, drawBackLine, FOOT_LIFT_WARN, muscleSVG, heatColor, cssVar } from './draw.js';
+import { drawSkeleton, drawGhost, drawGhostUpper, drawMuscles, drawFootContact, drawBalance, drawBackLine, FOOT_LIFT_WARN, muscleSVG, heatColor, cssVar } from './draw.js';
 import { lineChart } from './charts.js';
 
 const $ = (id) => document.getElementById(id);
@@ -43,7 +44,14 @@ export function showResult(result, opts = {}) {
   const { t, series: s, reps, body } = result;
   const W = result.width, H = result.height;
   const T0 = t[0] ?? 0, T1 = t[t.length - 1] ?? 0;
-  const COLORS = { knee: cssVar('--c-knee'), hip: cssVar('--c-hip'), trunk: cssVar('--c-trunk') };
+  const upper = ex.kind === 'upper';
+  // 비교 그래프·타임라인에 그릴 관절 (상체 종목은 팔꿈치·어깨·상체)
+  const F = ex.features || ['knee', 'hip', 'trunk'];
+  const F_KO = { knee: '무릎', hip: '엉덩이', trunk: '상체 기울기', elbow: '팔꿈치', shoulder: '어깨(위팔)' };
+  const PAL = [cssVar('--c-knee'), cssVar('--c-hip'), cssVar('--c-trunk')];
+  const COLORS = Object.fromEntries(F.map((f, k) => [f, PAL[k]]));
+  const Y_RANGE = upper ? { yMin: -100, yMax: 190, yTicks: [-90, -45, 0, 45, 90, 135, 180] } : { yMin: -20, yMax: 190, yTicks: [0, 45, 90, 135, 180] };
+  document.querySelectorAll('#view-result .lower-only').forEach((e) => { e.hidden = upper; });
 
   // ---- 배너 ----
   const banner = [];
@@ -75,7 +83,8 @@ export function showResult(result, opts = {}) {
   // 고스트 기준점: 세트 중 발은 고정이므로 발목 위치를 ±1초 중앙값으로 고정해 흔들림(바·원판 가림)을 없앤다.
   const half = Math.max(3, Math.round((result.fps || 15) * 1));
   const anchorOf = (arr) => arr.map((_, i) => median(arr.slice(Math.max(0, i - half), i + half + 1).filter(isNum)));
-  const ghostAX = anchorOf(s.ankleX), ghostAY = anchorOf(s.ankleY);
+  // 상체 종목은 손(바·손잡이)이 고정이므로 손목에 고정한다.
+  const ghostAX = anchorOf(upper ? s.wristX : s.ankleX), ghostAY = anchorOf(upper ? s.wristY : s.ankleY);
   // 앞꿈치 방향(음수)은 똑바로 설 때 랜드마크가 미세하게 바뀌며 생기는 오탐이라 표시하지 않는다.
   const footLift = (i) => (isNum(s.heelRel?.[i]) && isNum(heelBase) ? Math.max(0, (heelBase - s.heelRel[i]) / legLen) : NaN);
   // 동작 강도: 서 있을 때 0, 가장 깊이 내려갔을 때 1 → 근육 색 진하기에 반영
@@ -117,6 +126,20 @@ export function showResult(result, opts = {}) {
     const diff = r ? r.meanAbsDiff : result.summary.meanAbsDiff;
     const cards = [];
     if (!r) cards.push(['반복 수', `${reps.length}회`, '자동 구분']);
+    if (upper) {
+      const chin = result.exercise === 'chinup';
+      if (chin) cards.push(['턱 높이 (바 기준)', isNum(m.reach) ? (m.reach >= 0 ? '바 위 ✓' : '바 아래') : '–', '가장 높이 당겼을 때 입 vs 손 높이']);
+      cards.push([chin ? '가장 높이 당겼을 때 팔꿈치' : '최저점 팔꿈치 각도', deg(m.minElbow), `기준 ${deg(refBottom.elbow)}`]);
+      cards.push([chin ? '매달림 팔꿈치' : '위 자세 팔꿈치', deg(m.topElbow), `기준 ${deg(refTop.elbow)}`]);
+      if (!chin) cards.push(['최저점 어깨 신전', deg(m.shoulderExt), `기준 ${deg(-refBottom.shoulder)} · 위팔이 몸통 뒤로`]);
+      cards.push(['최대 상체 기울기', deg(m.maxTrunk), chin ? '+ 앞 / − 뒤' : `기준 ${deg(refBottom.trunk)}`]);
+      if (chin && isNum(m.hipRange)) cards.push(['몸 반동', `엉덩이 ${deg(m.hipRange)} 변화`, m.hipRange > UPPER_THRESHOLDS.chinup.kipHip ? '반동 있음' : '안정']);
+      cards.push([chin ? '당기기 / 내려오기' : '내려가기 / 올라오기', `${sec(m.down)} / ${sec(m.up)}`, '동작 속도']);
+      if (!r && result.load) cards.push(['무게', result.load.barKg > 0 ? `몸 ${result.load.bodyKg}kg · 보조 ${result.load.barKg}kg` : `몸 ${result.load.bodyKg}kg`, result.load.barKg > 0 ? `실제로 드는 무게 약 ${Math.max(0, Math.round(result.load.bodyKg - result.load.barKg))}kg` : '입력값 (기기에만 저장)']);
+      cards.push(['기준과 평균 차이', isNum(diff) ? `${Math.round(diff)}°` : '–', '세 각도 평균']);
+      $('metricCards').innerHTML = cards.map(([k, val, sub]) => `<div class="metric"><span>${k}</span><b>${val}</b><small>${sub}</small></div>`).join('');
+      return;
+    }
     if (result.exercise === 'squat') {
       cards.push(['허벅지 각도 (수평 기준)', isNum(m.thighAboveParallel) ? (m.thighAboveParallel <= 0 ? `평행 아래 ${Math.round(-m.thighAboveParallel)}°` : `+${Math.round(m.thighAboveParallel)}°`) : '–', '0° = 평행, 작을수록 깊음']);
       cards.push(['최저점 무릎 각도', deg(m.minKnee), `기준 ${deg(refBottom.knee)}`]);
@@ -168,7 +191,7 @@ export function showResult(result, opts = {}) {
     else if (full.length) {
       aligned = full[0].aligned.map((a, j) => ({
         phase: a.phase, ref: a.ref,
-        user: Object.fromEntries(['knee', 'hip', 'trunk'].map((f) => [f, mean(full.map((r) => r.aligned[j].user[f]))])),
+        user: Object.fromEntries(F.map((f) => [f, mean(full.map((r) => r.aligned[j].user[f]))])),
       }));
       label = `전체 ${full.length}회 평균`;
     } else if (reps.length) { aligned = reps[0].aligned; label = '1번째 반복'; }
@@ -176,16 +199,16 @@ export function showResult(result, opts = {}) {
     $('compareSub').textContent = `${label} · 실선 = 나, 점선 = ${refLabel}`;
     const xs = aligned.map((a) => a.phase);
     const series = [];
-    for (const f of ['knee', 'hip', 'trunk']) {
+    for (const f of F) {
       series.push({ xs, ys: aligned.map((a) => a.ref[f]), color: COLORS[f], dash: true });
-      series.push({ xs, ys: aligned.map((a) => a.user[f]), color: COLORS[f], label: { knee: '무릎', hip: '엉덩이', trunk: '상체 기울기' }[f], width: 2.5 });
+      series.push({ xs, ys: aligned.map((a) => a.user[f]), color: COLORS[f], label: F_KO[f], width: 2.5 });
     }
     lineChart(canvasEl, {
-      height: 220, xMin: 0, xMax: 1, yMin: -20, yMax: 190, yTicks: [0, 45, 90, 135, 180],
-      xTicks: [{ x: 0, label: '시작' }, { x: 0.5, label: '최저점' }, { x: 1, label: '끝' }],
+      height: 220, xMin: 0, xMax: 1, ...Y_RANGE,
+      xTicks: [{ x: 0, label: '시작' }, { x: 0.5, label: result.exercise === 'chinup' ? '가장 높이' : '최저점' }, { x: 1, label: '끝' }],
       bands: [{ x0: 0.4, x1: 0.6 }], series,
     });
-    const diffs = selected ? topDiffs([reps[selected - 1]]) : result.diffs;
+    const diffs = selected ? topDiffs([reps[selected - 1]], { label: refLabel, ...(ex.phaseKo ? { phaseKo: ex.phaseKo } : {}) }) : result.diffs;
     $('diffList').innerHTML = diffs.length
       ? diffs.map((d) => `<li><span class="dot" style="background:${COLORS[d.feature]}"></span>${esc(d.text)}</li>`).join('')
       : '<li class="muted">기준과 크게(8° 이상) 다른 구간이 없어요.</li>';
@@ -195,14 +218,10 @@ export function showResult(result, opts = {}) {
   let tl = null;
   const renderTimeline = (cursor = getTime()) => {
     tl = lineChart($('timelineChart'), {
-      height: 200, xMin: T0, xMax: T1, yMin: -20, yMax: 190, yTicks: [0, 45, 90, 135, 180],
+      height: 200, xMin: T0, xMax: T1, ...Y_RANGE,
       xTicks: niceTimeTicks(T0, T1),
       bands: reps.map((r) => ({ x0: t[r.start], x1: t[r.end], label: String(r.index), active: r.index === selected })),
-      series: [
-        { xs: t, ys: s.knee, color: COLORS.knee, label: '무릎' },
-        { xs: t, ys: s.hip, color: COLORS.hip, label: '엉덩이' },
-        { xs: t, ys: s.trunk, color: COLORS.trunk, label: '상체 기울기' },
-      ],
+      series: F.map((f) => ({ xs: t, ys: s[f], color: COLORS[f], label: F_KO[f] })),
       cursor,
     });
   };
@@ -266,11 +285,12 @@ export function showResult(result, opts = {}) {
         const r = repAt(i);
         const tempoMode = ghostMode.value === 'tempo' && result.reference?.tempo;
         const phase = !r ? 0 : tempoMode ? phaseByTempo(result.reference.tempo, t[i] - t[r.start]) : r.phase[i - r.start];
-        drawGhost(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, result.facings ? { ...body, facing: result.facings[i] } : body, W, H, refProfile);
+        if (upper) drawGhostUpper(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, body, W, H);
+        else drawGhost(ctx, result.exercise, phase, { x: ghostAX[i], y: ghostAY[i] }, result.facings ? { ...body, facing: result.facings[i] } : body, W, H, refProfile);
       }
-      if (showFeet.checked) { if (result.exercise !== 'deadlift') drawFootContact(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || result.load?.barKg > 0) drawBalance(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
-      if (showBack.checked) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
-      if (showSkel.checked) drawSkeleton(ctx, result.frames[i]?.lm, W, H, { side: result.sides?.[i] || result.side, labels: { knee: s.knee[i], hip: s.hip[i] } });
+      if (showFeet.checked && !upper) { if (result.exercise !== 'deadlift') drawFootContact(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, footLift(i), W, H); if (result.exercise !== 'deadlift' || result.load?.barKg > 0) drawBalance(ctx, result.frames[i]?.lm, result.sides?.[i] || result.side, isNum(s.comShift?.[i]) ? 0.5 + s.comShift[i] : NaN, W, H); }
+      if (showBack.checked && !upper) drawBackLine(ctx, result.frames[i]?.back, result.frames[i]?.lm, result.facings?.[i] || result.facing, s.backDelta?.[i], W, H);
+      if (showSkel.checked) drawSkeleton(ctx, result.frames[i]?.lm, W, H, { side: result.sides?.[i] || result.side, labels: upper ? { elbow: s.elbow[i] } : { knee: s.knee[i], hip: s.hip[i] } });
       $('seek').value = String(Math.round(((time - T0) / (T1 - T0 || 1)) * 1000));
     }
     if (more.open && now - lastTl > 120) { lastTl = now; renderTimeline(time); }

@@ -25,3 +25,24 @@ export function chainFromAngles({ shin, thigh, trunk }, ankle, body, facing = 1)
   const head = step(shoulder, trunk * 0.6, body.neck);
   return { ankle, knee, hip, shoulder, head };
 }
+
+// 상체 종목(친업·딥스): 손목(바·손잡이)에 고정한 채 관절 각도로 팔·몸통 위치를 만든다.
+//   angles: elbow(안쪽 각도), shoulder(몸통 아래 방향 대비 위팔, + 앞·위), trunk(상체 기울기, + 앞)
+//   각도 θ는 '아래 방향 0°, 앞쪽 +'로 잰 분절 방향. 팔꿈치를 굽히면 아래팔이 앞쪽(+)으로 돈다.
+//   legs: { hip, knee } 를 주면 다리도 만든다(합성 데이터용).
+export function upperChain({ elbow, shoulder, trunk }, wrist, body, facing = 1, legs = null) {
+  const v = (th, len) => ({ x: facing * Math.sin(th * RAD) * len, y: Math.cos(th * RAD) * len });
+  const add = (p, d, k = 1) => ({ x: p.x + d.x * k, y: p.y + d.y * k });
+  const thA = shoulder - trunk, thF = thA + (180 - elbow);
+  const el = add(wrist, v(thF, body.forearm), -1);
+  const sh = add(el, v(thA, body.upperArm), -1);
+  const hip = add(sh, v(-trunk, body.torso));
+  const head = add(sh, v(180 - trunk * 0.6, body.neck));
+  const out = { wrist, elbow: el, shoulder: sh, hip, head };
+  if (legs) {
+    const thT = -trunk + (180 - legs.hip);
+    out.knee = add(hip, v(thT, body.thigh));
+    out.ankle = add(out.knee, v(thT - (180 - legs.knee), body.shin));
+  }
+  return out;
+}

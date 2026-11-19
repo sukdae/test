@@ -8,6 +8,7 @@ import { leanFromVertical, dist, kneeAngle, hipAngle } from './geometry.js';
 import { fillGaps, smooth, median, percentile, mean, std, isNum, rangeMin, rangeMax, argmin } from './signal.js';
 import { segmentReps } from './reps.js';
 import { alignRep, topDiffs } from './compare.js';
+import { analyzeUpper } from './upper.js';
 import { evaluateFeedback } from './feedback.js';
 import { estimateMuscles } from './muscles.js';
 import { EXERCISES, getReference } from './exercises.js';
@@ -55,6 +56,7 @@ export function analyzeSession({ frames, width, height }, exId, { referenceId, l
   const load = cleanLoad(load0);
   const cfg = EXERCISES[exId];
   if (!cfg) throw new Error(`알 수 없는 종목: ${exId}`);
+  if (cfg.kind === 'upper') return analyzeUpper({ frames, width, height }, exId, { referenceId, load });
   const ref = getReference(exId, referenceId);
   const refProfile = ref?.curves ? ref : null;
   const n = frames.length;
