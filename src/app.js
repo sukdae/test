@@ -25,7 +25,10 @@ const TITLES = { survey: '현장 설문', onboarding: '시작하기', home: '폼
 const VIEW_KO = { side: '측면', front: '정면' };
 const MODE_HINT = { side: '깊이 · 상체 · 뒤꿈치 · 리듬', front: '무릎 · 좌우 균형 · 체중 분배', both: '영상 2개를 한 번에 골라도 돼요 · 3D' };
 // 데드리프트는 베타: 기준 자세 일부만 논문 근거, 나머지는 초깃값 → 트레이너 피드백용
-const VISIBLE_EXERCISES = ['squat', 'deadlift', 'chinup', 'dip'];
+// 지금은 스쿼트만 보여 준다(다른 종목 코드는 남겨 둠: 다시 켜려면 여기에 추가).
+const VISIBLE_EXERCISES = ['squat'];
+document.querySelectorAll('#exSeg [data-ex]').forEach((b) => { b.hidden = !VISIBLE_EXERCISES.includes(b.dataset.ex); });
+if (VISIBLE_EXERCISES.length < 2) document.getElementById('exSeg')?.setAttribute('hidden', '');
 // 친업·딥스는 측면만 (정면·3D는 아직 없음)
 const SIDE_ONLY = ['chinup', 'dip'];
 const BETA = {
@@ -52,6 +55,20 @@ const state = {
   objectUrls: [],
   cancelled: false,
 };
+
+// 모델 저장(sw.js): 두 번째 분석부터 다운로드 없이 시작
+if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
+// 카톡·인스타 등 앱 안 브라우저는 자세 인식(WebGL·WASM)이나 영상 읽기가 막히는 경우가 많다 → 바깥 브라우저 안내
+const INAPP = /KAKAOTALK|Instagram|FBAN|FBAV|NAVER\(inapp|Line\/|everytimeApp|DaumApps|BAND\//i.test(navigator.userAgent);
+if (INAPP) {
+  const bar = document.createElement('div');
+  bar.className = 'inapp-bar';
+  const kakaoAndroid = /KAKAOTALK/i.test(navigator.userAgent) && /Android/i.test(navigator.userAgent);
+  bar.innerHTML = `앱 안 브라우저에서는 분석이 느리거나 안 될 수 있어요. <b>${/iPhone|iPad/i.test(navigator.userAgent) ? '오른쪽 아래 ⋯ / 공유 → Safari로 열기' : '오른쪽 위 ⋮ → 다른 브라우저로 열기'}</b>` + (kakaoAndroid ? ' <button type="button" id="openOut">크롬으로 열기</button>' : '');
+  document.body.prepend(bar);
+  document.getElementById('openOut')?.addEventListener('click', () => { location.href = 'kakaotalk://web/openExternal?url=' + encodeURIComponent(location.href); });
+}
 
 function toast(msg) {
   const el = $('toast');
@@ -230,7 +247,7 @@ async function analyzeBlob(blob, view, label = null) {
     URL.revokeObjectURL(url);
     if (e.message === 'cancelled') return null;
     console.error(e);
-    toast(/fetch|import|network|Failed/i.test(e.message) ? '자세 인식 모델을 불러오지 못했어요. 처음 한 번은 인터넷 연결이 필요해요.' : e.message);
+    toast(/fetch|import|network|Failed|WebGL|wasm/i.test(e.message) ? (INAPP ? '자세 인식을 시작하지 못했어요. 크롬·사파리에서 열어 주세요.' : '자세 인식 모델을 불러오지 못했어요. 처음 한 번은 인터넷 연결이 필요해요.') : e.message);
     goHome();
     return null;
   }

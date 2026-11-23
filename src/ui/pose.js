@@ -7,7 +7,12 @@ const BUNDLE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/
 const WASM = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${VERSION}/wasm`;
 const MODEL = 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task';
 
+// 폰에서는 사람 윤곽(등 곡률, 실험 기능)을 끈다. 윤곽 마스크를 매 프레임 GPU→CPU 로 읽어 오는 비용이 커서
+// 폰 분석이 느려지는 주요 원인. 등 곡률이 없으면 앱은 그 판정만 빼고 동작한다(테스트: '등 데이터가 없으면').
+export const IS_MOBILE = typeof navigator !== 'undefined'
+  && (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent)));
 let landmarker = null;
+export let poseInfo = { delegate: null, masks: !IS_MOBILE };
 let loading = null;
 let lastTs = 0;
 let seqBase = 0;
@@ -26,12 +31,14 @@ export function loadPose() {
       minPoseDetectionConfidence: 0.5,
       minPosePresenceConfidence: 0.5,
       minTrackingConfidence: 0.5,
-      outputSegmentationMasks: true, // 등 곡률(실험)용 사람 윤곽
+      outputSegmentationMasks: !IS_MOBILE, // 등 곡률(실험)용 사람 윤곽 (폰에서는 끔)
     });
     try {
       landmarker = await PoseLandmarker.createFromOptions(fileset, opts('GPU'));
+      poseInfo.delegate = 'GPU';
     } catch {
       landmarker = await PoseLandmarker.createFromOptions(fileset, opts('CPU'));
+      poseInfo.delegate = 'CPU';
     }
     return landmarker;
   })();
